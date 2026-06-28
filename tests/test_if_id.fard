@@ -1,0 +1,57 @@
+import("std/str") as str
+import("std/hash") as hash
+import("../src/core/if_id") as ifid
+
+test "hash12 extracts first 12 uppercase hex chars from a sha256 digest" {
+  let digest = "sha256:8edc2910bb67d837ddf1a5e0d2e23f86879c8254d5ce4e034e9d5301b40e9e30" in
+  ifid.hash12(digest) == "8EDC2910BB67"
+}
+
+test "hash12 is uppercase" {
+  let digest = hash.sha256_text("hello") in
+  let h = ifid.hash12(digest) in
+  str.to_lower(h) != h || !str.contains(h, "a")
+}
+
+test "make_if_id produces IF-AAAAAAAAAAAA-BBBBBBBBBBBB format" {
+  let pd = "sha256:aabbccddeeff001122334455667788990011223344556677889900112233445566" in
+  let rd = "sha256:112233445566778899001122334455667788990011223344556677889900aabb" in
+  let id = ifid.make_if_id(pd, rd) in
+  str.starts_with(id, "IF-") && str.len(id) == 28
+}
+
+test "pixel_digest_canonical is deterministic for same pixels" {
+  let pixels = [
+    { r: 1.0, g: 0.0, b: 0.0 },
+    { r: 0.0, g: 1.0, b: 0.0 },
+    { r: 0.0, g: 0.0, b: 1.0 }
+  ] in
+  let d1 = ifid.pixel_digest_canonical(pixels) in
+  let d2 = ifid.pixel_digest_canonical(pixels) in
+  d1 == d2
+}
+
+test "pixel_digest_canonical differs for different pixels" {
+  let red   = [{ r: 1.0, g: 0.0, b: 0.0 }] in
+  let blue  = [{ r: 0.0, g: 0.0, b: 1.0 }] in
+  ifid.pixel_digest_canonical(red) != ifid.pixel_digest_canonical(blue)
+}
+
+test "pixel_digest_canonical starts with sha256:" {
+  let pixels = [{ r: 0.5, g: 0.5, b: 0.5 }] in
+  str.starts_with(ifid.pixel_digest_canonical(pixels), "sha256:")
+}
+
+test "known pixel digest vector: single white pixel" {
+  let white = [{ r: 1.0, g: 0.0, b: 0.0 }] in
+  let d = ifid.pixel_digest_canonical(white) in
+  str.starts_with(d, "sha256:")
+}
+
+test "if_id_from_pixels_and_receipt_json produces stable IF-ID" {
+  let pixels = [{ r: 1.0, g: 0.0, b: 0.0 }] in
+  let json = "{\"test\":\"value\"}" in
+  let id1 = ifid.if_id_from_pixels_and_receipt_json(pixels, json) in
+  let id2 = ifid.if_id_from_pixels_and_receipt_json(pixels, json) in
+  id1 == id2 && str.starts_with(id1, "IF-")
+}

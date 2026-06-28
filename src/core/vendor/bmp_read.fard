@@ -1,0 +1,85 @@
+import("std/fs") as fs
+import("std/bytes") as bytes
+import("std/list") as list
+import("std/cast") as cast
+import("./types") as t
+
+// Native BMP reader in pure FARD using fs.read_bytes
+// Supports Windows 3.x 24-bit BGR format (the format sips produces)
+// BMP header layout:
+//   bytes 0-1:   "BM" signature
+//   bytes 10-13: pixel data offset (uint32 LE)
+//   bytes 18-21: width (int32 LE)
+//   bytes 22-25: height (int32 LE, negative = top-down)
+//   bytes 28-29: bits per pixel
+
+fn read_u8(data, offset) {
+  bytes.get(data, offset)
+}
+
+fn read_u16_le(data, offset) {
+  bytes.get(data, offset) +
+  bytes.get(data, offset + 1) * 256
+}
+
+fn read_i32_le(data, offset) {
+  let b0 = bytes.get(data, offset) in
+  let b1 = bytes.get(data, offset + 1) in
+  let b2 = bytes.get(data, offset + 2) in
+  let b3 = bytes.get(data, offset + 3) in
+  let raw = b0 + b1 * 256 + b2 * 65536 + b3 * 16777216 in
+  // Handle two's complement for negative values (sign bit = bit 31)
+  if b3 >= 128
+  then raw - 4294967296
+  else raw
+}
+
+fn read_u32_le(data, offset) {
+  bytes.get(data, offset) +
+  bytes.get(data, offset + 1) * 256 +
+  bytes.get(data, offset + 2) * 65536 +
+  bytes.get(data, offset + 3) * 16777216
+}
+
+// Read a BMP file and return list of rgb_f records
+fn read_bmp(path) {
+  let data   = fs.read_bytes(path) in
+  let sig0   = read_u8(data, 0) in
+  let sig1   = read_u8(data, 1) in
+
+  // Verify BMP signature: 'B'=66, 'M'=77
+  if sig0 != 66 || sig1 != 77 then [] else
+
+  let px_offset = read_u32_le(data, 10) in
+  let width     = read_i32_le(data, 18) in
+  let height    = read_i32_le(data, 22) in
+  let bpp       = read_u16_le(data, 28) in
+
+  // Only handle 24-bit BMP
+  if bpp != 24 then [] else
+
+  let flip   = height < 0 in
+  let h      = if flip then 0 - height else height in
+  let w      = if width < 0 then 0 - width else width in
+
+  // Row stride padded to 4-byte boundary
+  let stride = (w * 3 + 3) / 4 * 4 in
+
+  list.build(w * h, fn(i) {
+    let col = i % w in
+    let row = i / w in
+    let actual_row = if flip then row else h - 1 - row in
+    let pos = px_offset + actual_row * stride + col * 3 in
+    let b = cast.float(bytes.get(data, pos))       / 255.0 in
+    let g = cast.float(bytes.get(data, pos + 1))   / 255.0 in
+    let r = cast.float(bytes.get(data, pos + 2))   / 255.0 in
+    t.rgb_f(r, g, b)
+  })
+}
+
+{
+  read_bmp:     read_bmp,
+  read_u8:      read_u8,
+  read_u32_le:  read_u32_le,
+  read_i32_le:  read_i32_le
+}

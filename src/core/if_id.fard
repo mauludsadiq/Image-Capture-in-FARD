@@ -1,0 +1,92 @@
+import("std/str") as str
+import("std/list") as list
+import("std/hash") as hash
+import("std/bytes") as bytes
+import("std/cast") as cast
+
+// IF-ID: deterministic image identity, per IF-Protocol-1.0.0.
+//
+// IF-<PIXELHASH12>-<RECEIPTHASH12>
+//
+// PIXELHASH12  = first 12 uppercase hex chars of SHA-256 over the
+//                canonical pixel byte sequence (r0 g0 b0 r1 g1 b1 ...).
+// RECEIPTHASH12 = first 12 uppercase hex chars of SHA-256 over the
+//                canonical receipt JSON (alphabetical keys, no whitespace),
+//                computed BEFORE if_id and receipt_digest are added.
+
+// Compute SHA-256 over the canonical pixel byte sequence and return
+// the full "sha256:xxxx..." prefixed digest string.
+//
+// pixels: list of {r, g, b} records where r/g/b are floats in [0,1].
+// The canonical sequence is: round(r*255) round(g*255) round(b*255)
+// for each pixel, left-to-right, top-to-bottom.
+fn pixel_digest(pixels) {
+  let n = list.len(pixels) in
+  let byte_list = list.fold(list.range(0, n), [], fn(acc, i) {
+    let px = list.get(pixels, i) in
+    let r = cast.int(px.r * 255.0 + 0.5) in
+    let g = cast.int(px.g * 255.0 + 0.5) in
+    let b = cast.int(px.b * 255.0 + 0.5) in
+    list.append(list.append(list.append(acc, r), g), b)
+  }) in
+  hash.sha256_text(
+    list.fold(byte_list, "", fn(acc, b) {
+      str.concat([acc, str.from_int(b), ","])
+    })
+  )
+}
+
+// A simpler, faster pixel digest that avoids the quadratic list.append
+// by encoding pixels as a flat comma-separated string of integers and
+// hashing that. This is the canonical method: the string
+// "r0,g0,b0,r1,g1,b1,...,rN,gN,bN," is the preimage.
+//
+// This is the REFERENCE implementation. It is deterministic and
+// cross-language reproducible (any implementation that produces the
+// same integer sequence and the same SHA-256 will get the same digest).
+fn pixel_digest_canonical(pixels) {
+  let n = list.len(pixels) in
+  let s = list.fold(list.range(0, n), "", fn(acc, i) {
+    let px = list.get(pixels, i) in
+    let r = cast.int(px.r * 255.0 + 0.5) in
+    let g = cast.int(px.g * 255.0 + 0.5) in
+    let b = cast.int(px.b * 255.0 + 0.5) in
+    str.concat([acc, str.from_int(r), ",", str.from_int(g), ",", str.from_int(b), ","])
+  }) in
+  hash.sha256_text(s)
+}
+
+// Extract the first 12 uppercase hex characters from a sha256:... digest.
+// sha256_text returns lowercase hex; we uppercase manually since
+// std/str has no to_upper.
+fn char_upper(c) {
+  if c == "a" then "A" else if c == "b" then "B" else if c == "c" then "C"
+  else if c == "d" then "D" else if c == "e" then "E" else if c == "f" then "F"
+  else c
+}
+
+fn hash12(digest) {
+  let hex = str.slice(digest, 7, 19) in
+  str.fold_chars(hex, "", fn(acc, c) { str.concat([acc, char_upper(c)]) })
+}
+
+// Compute IF-ID from a pixel_digest string and a receipt_digest string.
+fn make_if_id(pdigest, rdigest) {
+  str.concat(["IF-", hash12(pdigest), "-", hash12(rdigest)])
+}
+
+// Compute IF-ID from a list of pixels and a receipt JSON string
+// (the canonical JSON of the receipt WITHOUT if_id and receipt_digest).
+fn if_id_from_pixels_and_receipt_json(pixels, receipt_json) {
+  let pd = pixel_digest_canonical(pixels) in
+  let rd = hash.sha256_text(receipt_json) in
+  make_if_id(pd, rd)
+}
+
+{
+  pixel_digest:                      pixel_digest_canonical,
+  pixel_digest_canonical:            pixel_digest_canonical,
+  hash12:                            hash12,
+  make_if_id:                        make_if_id,
+  if_id_from_pixels_and_receipt_json: if_id_from_pixels_and_receipt_json
+}

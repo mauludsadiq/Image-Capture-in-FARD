@@ -1,0 +1,126 @@
+import("std/list") as list
+import("std/str") as str
+import("std/cast") as cast
+import("std/io") as io
+import("std/cli") as cli
+import("std/fs") as fs
+import("std/hash") as hash
+import("std/bytes") as bytes_mod
+import("../src/core/image_receipt") as receipt_mod
+import("../src/core/if_id") as ifid
+import("../src/core/image_read") as imgread
+import("../src/core/vendor/wcag") as wcag
+
+// image_explain.fard -- full IF-Protocol-1.0.0 identity profile for an image.
+//
+// Usage: image_explain <image_path> [palette_k]
+//
+// Prints:
+//   IF-ID
+//   pixel_digest, byte_digest
+//   dimensions, format, colorspace
+//   dominant palette (CF-IDs + hex + WCAG contrast on white)
+//   tamper warning if byte_digest != pixel_digest source
+
+fn ff2(f) {
+  str.from_float(cast.float(cast.int(f * 100.0 + 0.5)) / 100.0)
+}
+
+fn detect_format(path) {
+  if str.ends_with(path, ".png") then "png"
+  else if str.ends_with(path, ".jpg") || str.ends_with(path, ".jpeg") then "jpeg"
+  else if str.ends_with(path, ".bmp") then "bmp"
+  else "unknown"
+}
+
+fn hex_digit_val(c) {
+  if c == "0" then 0 else if c == "1" then 1 else if c == "2" then 2
+  else if c == "3" then 3 else if c == "4" then 4 else if c == "5" then 5
+  else if c == "6" then 6 else if c == "7" then 7 else if c == "8" then 8
+  else if c == "9" then 9
+  else if c == "a" || c == "A" then 10
+  else if c == "b" || c == "B" then 11
+  else if c == "c" || c == "C" then 12
+  else if c == "d" || c == "D" then 13
+  else if c == "e" || c == "E" then 14
+  else 15
+}
+
+fn hex2_to_int(s) {
+  hex_digit_val(str.slice(s, 0, 1)) * 16 + hex_digit_val(str.slice(s, 1, 2))
+}
+
+fn hex_to_rgb(hex_str) {
+  let h = if str.starts_with(hex_str, "#") then str.slice(hex_str, 1, str.len(hex_str)) else hex_str in
+  {
+    r: cast.float(hex2_to_int(str.slice(h, 0, 2))) / 255.0,
+    g: cast.float(hex2_to_int(str.slice(h, 2, 4))) / 255.0,
+    b: cast.float(hex2_to_int(str.slice(h, 4, 6))) / 255.0
+  }
+}
+
+fn main() {
+  let args = cli.args() in
+  if list.len(args) == 0 then
+    io.println("usage: image_explain <image_path> [palette_k]")
+  else
+    let path = list.get(args, 0) in
+    let k = if list.len(args) > 1 then cast.int(list.get(args, 1)) else 5 in
+
+    let _ = io.println(str.concat(["reading: ", path, "..."])) in
+
+    let raw_bytes = fs.read_bytes(path) in
+    let byte_dig = str.concat(["sha256:", bytes_mod.to_hex(hash.sha256_bytes(raw_bytes))]) in
+
+    let pixels = imgread.read_image_pixels(path, 16) in
+    let n = list.len(pixels) in
+
+    if n == 0 then
+      io.println("error: could not read image pixels")
+    else
+      let format = detect_format(path) in
+
+      let fields = {
+        pixels:       pixels,
+        byte_digest:  byte_dig,
+        format:       format,
+        width:        0,
+        height:       n,
+        colorspace:   "sRGB",
+        icc_digest:   null,
+        orientation:  1,
+        palette_k:    k,
+        source:       receipt_mod.no_source(),
+        parent_if_id: null,
+        operation:    "original",
+        params:       null
+      } in
+
+      let receipt = receipt_mod.make_receipt(fields) in
+      let white = { r: 1.0, g: 1.0, b: 1.0 } in
+
+      let _ = io.println("") in
+      let _ = io.println(str.concat(["IF-ID:         ", receipt.if_id])) in
+      let _ = io.println(str.concat(["pixel_digest:  ", receipt.pixel_digest])) in
+      let _ = io.println(str.concat(["byte_digest:   ", receipt.byte_digest])) in
+      let _ = io.println(str.concat(["receipt_digest: ", receipt.receipt_digest])) in
+      let _ = io.println("") in
+      let _ = io.println(str.concat(["format:        ", receipt.format])) in
+      let _ = io.println(str.concat(["colorspace:    ", receipt.colorspace])) in
+      let _ = io.println(str.concat(["orientation:   ", str.from_int(receipt.orientation)])) in
+      let _ = io.println(str.concat(["pixels sampled:", str.from_int(n)])) in
+      let _ = io.println("") in
+      let _ = io.println(str.concat(["dominant palette (k=", str.from_int(k), "):"])) in
+      list.fold(receipt.palette, 1, fn(i, entry) {
+        let rgb = hex_to_rgb(entry.hex) in
+        let ratio = wcag.contrast_ratio(rgb, white) in
+        let _ = io.println(str.concat([
+          "  ", str.from_int(i), ". ", entry.hex,
+          "  ", entry.cf_id,
+          "  contrast/white=", ff2(ratio)
+        ])) in
+        i + 1
+      })
+}
+
+main()

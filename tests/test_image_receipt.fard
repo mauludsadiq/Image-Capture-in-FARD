@@ -1,0 +1,127 @@
+import("std/list") as list
+import("std/str") as str
+import("std/hash") as hash
+import("../src/core/if_id") as ifid
+import("../src/core/image_receipt") as receipt_mod
+
+fn rgb(r,g,b) { { r: r, g: g, b: b } }
+
+let WHITE  = [rgb(1.0, 1.0, 1.0)]
+let BLACK  = [rgb(0.0, 0.0, 0.0)]
+let RED    = [rgb(1.0, 0.0, 0.0)]
+let MIXED  = [rgb(1.0,0.0,0.0), rgb(0.0,1.0,0.0), rgb(0.0,0.0,1.0), rgb(1.0,1.0,0.0)]
+
+fn dummy_fields(pixels) {
+  {
+    pixels:       pixels,
+    byte_digest:  "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    format:       "png",
+    width:        1,
+    height:       list.len(pixels),
+    colorspace:   "sRGB",
+    icc_digest:   null,
+    orientation:  1,
+    palette_k:    2,
+    source:       receipt_mod.no_source(),
+    parent_if_id: null,
+    operation:    "original",
+    params:       null
+  }
+}
+
+test "IF-ID has correct format: IF-XXXXXXXXXXXX-XXXXXXXXXXXX" {
+  let r = receipt_mod.make_receipt(dummy_fields(RED)) in
+  str.starts_with(r.if_id, "IF-") &&
+  str.len(r.if_id) == 28
+}
+
+test "same pixels produce same pixel_digest and same IF-ID" {
+  let r1 = receipt_mod.make_receipt(dummy_fields(RED)) in
+  let r2 = receipt_mod.make_receipt(dummy_fields(RED)) in
+  r1.pixel_digest == r2.pixel_digest && r1.if_id == r2.if_id
+}
+
+test "different pixels produce different pixel_digest" {
+  let r1 = receipt_mod.make_receipt(dummy_fields(RED)) in
+  let r2 = receipt_mod.make_receipt(dummy_fields(BLACK)) in
+  r1.pixel_digest != r2.pixel_digest
+}
+
+test "white and black produce different IF-IDs" {
+  let r1 = receipt_mod.make_receipt(dummy_fields(WHITE)) in
+  let r2 = receipt_mod.make_receipt(dummy_fields(BLACK)) in
+  r1.if_id != r2.if_id
+}
+
+test "metadata-only change produces same pixel_digest but different receipt_digest" {
+  let f1 = dummy_fields(RED) in
+  let f2 = {
+    pixels:       f1.pixels,
+    byte_digest:  "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    format:       f1.format,
+    width:        f1.width,
+    height:       f1.height,
+    colorspace:   f1.colorspace,
+    icc_digest:   f1.icc_digest,
+    orientation:  f1.orientation,
+    palette_k:    f1.palette_k,
+    source:       f1.source,
+    parent_if_id: f1.parent_if_id,
+    operation:    f1.operation,
+    params:       f1.params
+  } in
+  let r1 = receipt_mod.make_receipt(f1) in
+  let r2 = receipt_mod.make_receipt(f2) in
+  r1.pixel_digest == r2.pixel_digest &&
+  r1.receipt_digest != r2.receipt_digest &&
+  r1.if_id != r2.if_id
+}
+
+test "freshly made receipt verifies as valid" {
+  let r = receipt_mod.make_receipt(dummy_fields(RED)) in
+  let result = receipt_mod.verify_receipt(r) in
+  result.valid
+}
+
+test "tampered receipt_digest is detected" {
+  let r = receipt_mod.make_receipt(dummy_fields(RED)) in
+  let tampered = {
+    byte_digest:         r.byte_digest,
+    colorspace:          r.colorspace,
+    format:              r.format,
+    height:              r.height,
+    icc_digest:          r.icc_digest,
+    if_id:               r.if_id,
+    if_version:          r.if_version,
+    operation:           r.operation,
+    orientation:         r.orientation,
+    palette:             r.palette,
+    params:              r.params,
+    parent_if_id:        r.parent_if_id,
+    pixel_digest:        r.pixel_digest,
+    pixel_sample_stride: r.pixel_sample_stride,
+    receipt_digest:      "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    source:              r.source,
+    width:               r.width
+  } in
+  let result = receipt_mod.verify_receipt(tampered) in
+  !result.valid
+}
+
+test "pixel_digest hash12 extracts 12 uppercase hex chars" {
+  let r = receipt_mod.make_receipt(dummy_fields(RED)) in
+  let p12 = ifid.hash12(r.pixel_digest) in
+  str.len(p12) == 12
+}
+
+test "palette has CF-IDs for each entry" {
+  let r = receipt_mod.make_receipt(dummy_fields(MIXED)) in
+  list.fold(r.palette, true, fn(acc, entry) {
+    acc && str.starts_with(entry.cf_id, "CF-") && str.len(entry.cf_id) == 18
+  })
+}
+
+test "parent_if_id is null for original capture" {
+  let r = receipt_mod.make_receipt(dummy_fields(RED)) in
+  r.parent_if_id == null
+}

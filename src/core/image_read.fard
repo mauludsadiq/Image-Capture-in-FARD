@@ -1,0 +1,27 @@
+import("std/process") as process
+import("std/str") as str
+import("std/list") as list
+import("../core/vendor/bmp_read") as bmp
+
+// Read pixels from any image file sips supports
+// Uses sips to resize + convert to BMP, then native FARD BMP parser
+// thumb_side: resize longest edge to this before sampling (e.g. 64)
+// Returns list of rgb_f records
+
+fn read_image_pixels(path, thumb_side) {
+  let side_s   = str.from_int(thumb_side) in
+  let bmp_path = "out/image_read_thumb.bmp" in
+
+  let step1 = process.capture("sips", [
+    "--resampleHeightWidthMax", side_s,
+    "--setProperty", "format", "bmp",
+    path, "--out", bmp_path
+  ]) in
+
+  if !step1.ok then [] else
+  bmp.read_bmp(bmp_path)
+}
+
+{
+  read_image_pixels: read_image_pixels
+}

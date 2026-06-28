@@ -1,0 +1,84 @@
+import("std/cast") as cast
+import("std/math") as math
+import("./math") as m
+
+// WCAG 2.1 relative luminance
+// https://www.w3.org/TR/WCAG21/#dfn-relative-luminance
+// Uses sRGB linearisation -- same as our LAB pipeline
+
+fn linearise(c) {
+  if c <= 0.04045
+  then c / 12.92
+  else math.pow((c + 0.055) / 1.055, 2.4)
+}
+
+fn relative_luminance(rgb) {
+  let r = linearise(rgb.r) in
+  let g = linearise(rgb.g) in
+  let b = linearise(rgb.b) in
+  0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+fn contrast_ratio(rgb1, rgb2) {
+  let l1 = relative_luminance(rgb1) in
+  let l2 = relative_luminance(rgb2) in
+  let lighter = m.maxf(l1, l2) in
+  let darker  = m.minf(l1, l2) in
+  (lighter + 0.05) / (darker + 0.05)
+}
+
+// WCAG 2.1 levels
+// AA normal text:  4.5:1
+// AA large text:   3.0:1
+// AAA normal text: 7.0:1
+// AAA large text:  4.5:1
+
+fn passes_aa_normal(rgb1, rgb2) {
+  contrast_ratio(rgb1, rgb2) >= 4.5
+}
+
+fn passes_aa_large(rgb1, rgb2) {
+  contrast_ratio(rgb1, rgb2) >= 3.0
+}
+
+fn passes_aaa_normal(rgb1, rgb2) {
+  contrast_ratio(rgb1, rgb2) >= 7.0
+}
+
+fn passes_aaa_large(rgb1, rgb2) {
+  contrast_ratio(rgb1, rgb2) >= 4.5
+}
+
+fn wcag_level(rgb1, rgb2) {
+  let ratio = contrast_ratio(rgb1, rgb2) in
+  if ratio >= 7.0 then "AAA"
+  else if ratio >= 4.5 then "AA"
+  else if ratio >= 3.0 then "AA-large"
+  else "fail"
+}
+
+fn wcag_report(rgb1, rgb2) {
+  let ratio = contrast_ratio(rgb1, rgb2) in
+  let level = wcag_level(rgb1, rgb2) in
+  {
+    ratio:          ratio,
+    level:          level,
+    aa_normal:      ratio >= 4.5,
+    aa_large:       ratio >= 3.0,
+    aaa_normal:     ratio >= 7.0,
+    aaa_large:      ratio >= 4.5,
+    luminance_1:    relative_luminance(rgb1),
+    luminance_2:    relative_luminance(rgb2)
+  }
+}
+
+{
+  relative_luminance: relative_luminance,
+  contrast_ratio:     contrast_ratio,
+  passes_aa_normal:   passes_aa_normal,
+  passes_aa_large:    passes_aa_large,
+  passes_aaa_normal:  passes_aaa_normal,
+  passes_aaa_large:   passes_aaa_large,
+  wcag_level:         wcag_level,
+  wcag_report:        wcag_report
+}

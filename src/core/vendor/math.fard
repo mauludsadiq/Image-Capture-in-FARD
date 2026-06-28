@@ -1,0 +1,55 @@
+import("std/cast") as cast
+
+fn absf(x) {
+  if x < 0.0 then 0.0 - x else x
+}
+
+fn minf(a, b) {
+  if a < b then a else b
+}
+
+fn maxf(a, b) {
+  if a > b then a else b
+}
+
+fn clampf(x, lo, hi) {
+  if x < lo then lo else if x > hi then hi else x
+}
+
+fn mini(a, b) {
+  if a < b then a else b
+}
+
+fn maxi(a, b) {
+  if a > b then a else b
+}
+
+fn clampi(x, lo, hi) {
+  if x < lo then lo else if x > hi then hi else x
+}
+
+fn roundi(x) {
+  if x >= 0.0 then cast.int(x + 0.5) else 0 - cast.int((0.0 - x) + 0.5)
+}
+
+fn mod360(h) {
+  let h1 = if h < 0.0 then h + 360.0 else h in
+  if h1 >= 360.0 then h1 - 360.0 else h1
+}
+
+fn sq(x) {
+  x * x
+}
+
+{
+  absf: absf,
+  minf: minf,
+  maxf: maxf,
+  clampf: clampf,
+  mini: mini,
+  maxi: maxi,
+  clampi: clampi,
+  roundi: roundi,
+  mod360: mod360,
+  sq: sq
+}

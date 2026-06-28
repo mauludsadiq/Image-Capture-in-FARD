@@ -1,0 +1,37 @@
+fn rgb_f(r, g, b) {
+  { kind: "rgb_f", r: r, g: g, b: b }
+}
+
+fn color_i(r, g, b) {
+  { kind: "color_i", r: r, g: g, b: b }
+}
+
+fn hsv(h, s, v) {
+  { kind: "hsv", h: h, s: s, v: v }
+}
+
+fn lab(l, a, b) {
+  { kind: "lab", l: l, a: a, b: b }
+}
+
+fn lch(l, c, h) {
+  { kind: "lch", l: l, c: c, h: h }
+}
+
+fn quantizer_simplex(k) {
+  { kind: "quantizer_simplex", k: k }
+}
+
+fn image(width, height, pixels) {
+  { kind: "image", width: width, height: height, pixels: pixels }
+}
+
+{
+  rgb_f: rgb_f,
+  color_i: color_i,
+  hsv: hsv,
+  lab: lab,
+  lch: lch,
+  quantizer_simplex: quantizer_simplex,
+  image: image
+}

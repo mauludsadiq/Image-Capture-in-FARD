@@ -1,0 +1,171 @@
+import("std/str") as str
+import("std/list") as list
+import("std/json") as json
+import("std/hash") as hash
+import("std/cast") as cast
+import("../core/if_id") as ifid
+import("../core/vendor/cf_id") as cf
+import("../core/vendor/rgb_lab") as lab
+import("../core/vendor/kmeans") as km
+
+// image_receipt.fard -- build and verify IF-Protocol-1.0.0 image receipts.
+//
+// A receipt captures four identities for an image:
+//   byte_digest   -- exact file identity (SHA-256 of raw file bytes)
+//   pixel_digest  -- decoded pixel identity (SHA-256 of canonical RGB sequence)
+//   icc_digest    -- embedded ICC profile identity, or null
+//   if_id         -- the composite image identity (IF-PIXELHASH12-RECEIPTHASH12)
+//
+// Metadata (dimensions, format, colorspace, palette, source claims) is
+// recorded in the receipt but does NOT affect pixel_digest -- only the
+// actual decoded pixels do.
+
+fn clamp01(v) {
+  if v < 0.0 then 0.0 else if v > 1.0 then 1.0 else v
+}
+
+// Build a palette from pixels using k-means (k colours), returning a
+// list of {hex, cf_id} records sorted by cluster size (largest first).
+fn build_palette(pixels, k) {
+  if list.len(pixels) == 0 then [] else
+  let palette_rgb = km.kmeans(pixels, k, 8) in
+  list.map(palette_rgb, fn(rgb) {
+    let clamped = { r: clamp01(rgb.r), g: clamp01(rgb.g), b: clamp01(rgb.b) } in
+    let hex = str.to_lower(cf.rgb_to_hex6(clamped)) in
+    { hex: str.concat(["#", hex]), cf_id: cf.make_cf_id(clamped) }
+  })
+}
+
+// Canonical JSON for a receipt WITHOUT if_id and receipt_digest.
+// Fields are in alphabetical order per IF-Protocol-1.0.0 section 4.1.
+fn receipt_preimage_json(r) {
+  json.encode({
+    byte_digest:          r.byte_digest,
+    colorspace:           r.colorspace,
+    format:               r.format,
+    height:               r.height,
+    icc_digest:           r.icc_digest,
+    if_version:           r.if_version,
+    operation:            r.operation,
+    orientation:          r.orientation,
+    palette:              r.palette,
+    params:               r.params,
+    parent_if_id:         r.parent_if_id,
+    pixel_digest:         r.pixel_digest,
+    pixel_sample_stride:  r.pixel_sample_stride,
+    source:               r.source,
+    width:                r.width
+  })
+}
+
+// Build a complete image receipt from decoded pixels and metadata.
+//
+// fields:
+//   pixels         list of {r,g,b} floats in [0,1]
+//   byte_digest    sha256:... of the raw file bytes (caller computes)
+//   format         "png" | "jpeg" | "bmp" | "unknown"
+//   width, height  pixel dimensions (after orientation correction)
+//   colorspace     "sRGB" | "DisplayP3" | "unknown"
+//   icc_digest     sha256:... of ICC profile bytes, or null
+//   orientation    EXIF orientation (1-8), or 1
+//   palette_k      number of palette colours to extract
+//   source         {device_claim, sensor_profile_digest,
+//                   lens_profile_digest, timestamp, location_claim}
+//   parent_if_id   IF-ID of source image, or null
+//   operation      "original" | "crop" | "resize" | "rotate"
+//   params         operation params record, or null
+fn make_receipt(fields) {
+  let pd = ifid.pixel_digest_canonical(fields.pixels) in
+  let palette = build_palette(fields.pixels, fields.palette_k) in
+
+  let partial = {
+    byte_digest:         fields.byte_digest,
+    colorspace:          fields.colorspace,
+    format:              fields.format,
+    height:              fields.height,
+    icc_digest:          fields.icc_digest,
+    if_version:          "IF-CAPTURE-1.0.0",
+    operation:           fields.operation,
+    orientation:         fields.orientation,
+    palette:             palette,
+    params:              fields.params,
+    parent_if_id:        fields.parent_if_id,
+    pixel_digest:        pd,
+    pixel_sample_stride: 1,
+    source:              fields.source,
+    width:               fields.width
+  } in
+
+  let preimage = receipt_preimage_json(partial) in
+  let rd = hash.sha256_text(preimage) in
+  let the_if_id = ifid.make_if_id(pd, rd) in
+
+  {
+    byte_digest:         partial.byte_digest,
+    colorspace:          partial.colorspace,
+    format:              partial.format,
+    height:              partial.height,
+    icc_digest:          partial.icc_digest,
+    if_id:               the_if_id,
+    if_version:          partial.if_version,
+    operation:           partial.operation,
+    orientation:         partial.orientation,
+    palette:             partial.palette,
+    params:              partial.params,
+    parent_if_id:        partial.parent_if_id,
+    pixel_digest:        partial.pixel_digest,
+    pixel_sample_stride: partial.pixel_sample_stride,
+    receipt_digest:      rd,
+    source:              partial.source,
+    width:               partial.width
+  }
+}
+
+// Verify an existing receipt by recomputing if_id and receipt_digest.
+// Returns {valid, reason}.
+fn verify_receipt(receipt) {
+  let partial = {
+    byte_digest:         receipt.byte_digest,
+    colorspace:          receipt.colorspace,
+    format:              receipt.format,
+    height:              receipt.height,
+    icc_digest:          receipt.icc_digest,
+    if_version:          receipt.if_version,
+    operation:           receipt.operation,
+    orientation:         receipt.orientation,
+    palette:             receipt.palette,
+    params:              receipt.params,
+    parent_if_id:        receipt.parent_if_id,
+    pixel_digest:        receipt.pixel_digest,
+    pixel_sample_stride: receipt.pixel_sample_stride,
+    source:              receipt.source,
+    width:               receipt.width
+  } in
+  let preimage = receipt_preimage_json(partial) in
+  let expected_rd = hash.sha256_text(preimage) in
+  let expected_if_id = ifid.make_if_id(receipt.pixel_digest, expected_rd) in
+  if receipt.receipt_digest != expected_rd then
+    { valid: false, reason: "receipt_digest mismatch" }
+  else if receipt.if_id != expected_if_id then
+    { valid: false, reason: "if_id mismatch" }
+  else
+    { valid: true, reason: "ok" }
+}
+
+fn no_source() {
+  {
+    device_claim:          null,
+    lens_profile_digest:   null,
+    location_claim:        null,
+    sensor_profile_digest: null,
+    timestamp:             null
+  }
+}
+
+{
+  make_receipt:     make_receipt,
+  verify_receipt:   verify_receipt,
+  build_palette:    build_palette,
+  no_source:        no_source,
+  receipt_preimage_json: receipt_preimage_json
+}

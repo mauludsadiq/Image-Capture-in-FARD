@@ -1,0 +1,125 @@
+import("std/cast") as cast
+import("std/math") as math
+import("./types") as t
+import("./math") as m
+
+// D65 illuminant reference white
+let ref_x = 95.047
+let ref_y = 100.000
+let ref_z = 108.883
+
+fn srgb_to_linear(c) {
+  if c <= 0.04045
+  then c / 12.92
+  else math.pow((c + 0.055) / 1.055, 2.4)
+}
+
+fn linear_to_srgb(c) {
+  if c <= 0.0031308
+  then 12.92 * c
+  else 1.055 * math.pow(c, 1.0 / 2.4) - 0.055
+}
+
+fn rgb_to_xyz(rgb) {
+  let r = srgb_to_linear(rgb.r) in
+  let g = srgb_to_linear(rgb.g) in
+  let b = srgb_to_linear(rgb.b) in
+  let x = r * 0.4124564 + g * 0.3575761 + b * 0.1804375 in
+  let y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750 in
+  let z = r * 0.0193339 + g * 0.1191920 + b * 0.9503041 in
+  { x: x * 100.0, y: y * 100.0, z: z * 100.0 }
+}
+
+fn xyz_to_rgb(xyz) {
+  let x = xyz.x / 100.0 in
+  let y = xyz.y / 100.0 in
+  let z = xyz.z / 100.0 in
+  let r = x *  3.2404542 + y * -1.5371385 + z * -0.4985314 in
+  let g = x * -0.9692660 + y *  1.8760108 + z *  0.0415560 in
+  let b = x *  0.0556434 + y * -0.2040259 + z *  1.0572252 in
+  t.rgb_f(
+    m.clampf(linear_to_srgb(r), 0.0, 1.0),
+    m.clampf(linear_to_srgb(g), 0.0, 1.0),
+    m.clampf(linear_to_srgb(b), 0.0, 1.0)
+  )
+}
+
+fn lab_f(v) {
+  if v > 0.008856
+  then math.pow(v, 1.0 / 3.0)
+  else 7.787 * v + 16.0 / 116.0
+}
+
+fn lab_f_inv(v) {
+  let v3 = v * v * v in
+  if v3 > 0.008856
+  then v3
+  else (v - 16.0 / 116.0) / 7.787
+}
+
+fn xyz_to_lab(xyz) {
+  let fx = lab_f(xyz.x / ref_x) in
+  let fy = lab_f(xyz.y / ref_y) in
+  let fz = lab_f(xyz.z / ref_z) in
+  t.lab(116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
+}
+
+fn lab_to_xyz(lab) {
+  let fy = (lab.l + 16.0) / 116.0 in
+  let fx = lab.a / 500.0 + fy in
+  let fz = fy - lab.b / 200.0 in
+  {
+    x: lab_f_inv(fx) * ref_x,
+    y: lab_f_inv(fy) * ref_y,
+    z: lab_f_inv(fz) * ref_z
+  }
+}
+
+fn rgb_to_lab(rgb) {
+  xyz_to_lab(rgb_to_xyz(rgb))
+}
+
+fn lab_to_rgb(lab) {
+  xyz_to_rgb(lab_to_xyz(lab))
+}
+
+fn lab_to_lch(lab) {
+  let c = math.sqrt(lab.a * lab.a + lab.b * lab.b) in
+  let h = m.mod360(math.atan2(lab.b, lab.a) * 180.0 / math.pi) in
+  t.lch(lab.l, c, h)
+}
+
+fn lch_to_lab(lch) {
+  let a = lch.c * math.cos(lch.h * math.pi / 180.0) in
+  let b = lch.c * math.sin(lch.h * math.pi / 180.0) in
+  t.lab(lch.l, a, b)
+}
+
+fn rgb_to_lch(rgb) {
+  lab_to_lch(rgb_to_lab(rgb))
+}
+
+fn lch_to_rgb(lch) {
+  lab_to_rgb(lch_to_lab(lch))
+}
+
+fn delta_e(lab1, lab2) {
+  let dl = lab1.l - lab2.l in
+  let da = lab1.a - lab2.a in
+  let db = lab1.b - lab2.b in
+  math.sqrt(dl * dl + da * da + db * db)
+}
+
+{
+  rgb_to_xyz: rgb_to_xyz,
+  xyz_to_rgb: xyz_to_rgb,
+  xyz_to_lab: xyz_to_lab,
+  lab_to_xyz: lab_to_xyz,
+  rgb_to_lab: rgb_to_lab,
+  lab_to_rgb: lab_to_rgb,
+  lab_to_lch: lab_to_lch,
+  lch_to_lab: lch_to_lab,
+  rgb_to_lch: rgb_to_lch,
+  lch_to_rgb: lch_to_rgb,
+  delta_e: delta_e
+}

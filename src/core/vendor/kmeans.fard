@@ -1,0 +1,111 @@
+import("std/list") as list
+import("std/cast") as cast
+import("./types") as t
+import("./math") as m
+import("./rgb_lab") as lab
+
+// K-means clustering in LAB space for perceptually accurate palette extraction
+// More accurate than simplex quantizer for image-derived palettes because
+// it weights by pixel frequency rather than uniform grid coverage
+
+fn rgb_dist_sq(a, b) {
+  let dr = a.r - b.r in
+  let dg = a.g - b.g in
+  let db = a.b - b.b in
+  dr * dr + dg * dg + db * db
+}
+
+fn lab_dist_sq(a, b) {
+  let dl = a.l - b.l in
+  let da = a.a - b.a in
+  let db = a.b - b.b in
+  dl * dl + da * da + db * db
+}
+
+fn nearest_centroid_idx(lab_pixel, centroids_lab) {
+  let result = list.fold(
+    list.range(0, list.len(centroids_lab)),
+    { idx: 0, dist: 1000000.0 },
+    fn(acc, i) {
+      let d = lab_dist_sq(lab_pixel, list.get(centroids_lab, i)) in
+      if d < acc.dist then { idx: i, dist: d } else acc
+    }
+  ) in
+  result.idx
+}
+
+fn mean_lab(lab_pixels) {
+  let n = list.len(lab_pixels) in
+  if n == 0 then t.lab(50.0, 0.0, 0.0) else
+  let sum = list.fold(lab_pixels, { l: 0.0, a: 0.0, b: 0.0 }, fn(acc, p) {
+    { l: acc.l + p.l, a: acc.a + p.a, b: acc.b + p.b }
+  }) in
+  t.lab(sum.l / cast.float(n), sum.a / cast.float(n), sum.b / cast.float(n))
+}
+
+// Initialise centroids using k-means++ strategy (spread initial seeds)
+fn init_centroids(pixels_lab, k) {
+  let n = list.len(pixels_lab) in
+  let first = list.get(pixels_lab, 0) in
+  list.fold(list.range(1, k), [first], fn(centroids, _) {
+    // Pick next centroid weighted by distance from nearest existing centroid
+    let best = list.fold(
+      list.range(0, n),
+      { pixel: first, max_dist: 0.0 - 1.0 },
+      fn(acc, i) {
+        let p = list.get(pixels_lab, i) in
+        let min_d = list.fold(centroids, 1000000.0, fn(md, c) {
+          let d = lab_dist_sq(p, c) in
+          if d < md then d else md
+        }) in
+        if min_d > acc.max_dist then { pixel: p, max_dist: min_d } else acc
+      }
+    ) in
+    list.append(centroids, best.pixel)
+  })
+}
+
+// Run one k-means iteration: assign pixels to nearest centroid, recompute means
+fn kmeans_step(pixels_lab, centroids_lab) {
+  let k = list.len(centroids_lab) in
+  let n = list.len(pixels_lab) in
+
+  // Assign each pixel to nearest centroid
+  let assignments = list.map(pixels_lab, fn(p) {
+    nearest_centroid_idx(p, centroids_lab)
+  }) in
+
+  // Recompute centroids as mean of assigned pixels
+  list.build(k, fn(ci) {
+    let cluster_pixels = list.fold(
+      list.range(0, n),
+      [],
+      fn(acc, i) {
+        if list.get(assignments, i) == ci
+        then list.append(acc, list.get(pixels_lab, i))
+        else acc
+      }
+    ) in
+    if list.len(cluster_pixels) == 0
+    then list.get(centroids_lab, ci)
+    else mean_lab(cluster_pixels)
+  })
+}
+
+// Run k-means for a fixed number of iterations
+fn kmeans(pixels_rgb, k, iterations) {
+  let pixels_lab = list.map(pixels_rgb, fn(rgb) { lab.rgb_to_lab(rgb) }) in
+  let initial    = init_centroids(pixels_lab, k) in
+  let final_labs = list.fold(
+    list.range(0, iterations),
+    initial,
+    fn(centroids, _) { kmeans_step(pixels_lab, centroids) }
+  ) in
+  list.map(final_labs, fn(l) { lab.lab_to_rgb(l) })
+}
+
+{
+  kmeans:               kmeans,
+  init_centroids:       init_centroids,
+  nearest_centroid_idx: nearest_centroid_idx
+}

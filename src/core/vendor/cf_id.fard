@@ -1,0 +1,84 @@
+import("std/hash") as hash
+import("std/str") as str
+import("std/cast") as cast
+import("std/json") as json
+import("./rgb_lab") as lab
+
+// CF-ID v1.0.0
+// Identity format: CF-<HEX6>-<LABHASH8>
+// HEX6:    uppercase sRGB hex without #
+// LABHASH8: first 8 hex chars of SHA256 over canonical LAB JSON
+//           LAB rounded to 3 decimal places
+//           stable across naming/anchor/formula version changes
+//           only changes if D65 matrix or sRGB gamma constants change
+
+let IDENTITY_VERSION = "CF-ID-1.0.0"
+
+fn round3(x) {
+  cast.float(cast.int(x * 1000.0 + 0.5)) / 1000.0
+}
+
+fn lab_canonical(l_val) {
+  { l: round3(l_val.l), a: round3(l_val.a), b: round3(l_val.b) }
+}
+
+fn byte_to_hex_upper(n) {
+  let hi = n / 16 in
+  let lo = n % 16 in
+  let hex_char = fn(d) {
+    if d < 10 then str.from_int(d)
+    else if d == 10 then "A"
+    else if d == 11 then "B"
+    else if d == 12 then "C"
+    else if d == 13 then "D"
+    else if d == 14 then "E"
+    else "F"
+  } in
+  str.concat([hex_char(hi), hex_char(lo)])
+}
+
+fn rgb_to_hex6(rgb) {
+  let r = cast.int(rgb.r * 255.0 + 0.5) in
+  let g = cast.int(rgb.g * 255.0 + 0.5) in
+  let b = cast.int(rgb.b * 255.0 + 0.5) in
+  str.concat([byte_to_hex_upper(r), byte_to_hex_upper(g), byte_to_hex_upper(b)])
+}
+
+fn lab_hash8(l_val) {
+  let canonical = lab_canonical(l_val) in
+  let digest = hash.sha256_text(json.encode(canonical)) in
+  str.upper(str.slice(digest, 7, 15))
+}
+
+fn make_cf_id(rgb) {
+  let l_val = lab.rgb_to_lab(rgb) in
+  let hex6 = rgb_to_hex6(rgb) in
+  let hash8 = lab_hash8(l_val) in
+  str.concat(["CF-", hex6, "-", hash8])
+}
+
+fn make_entry(rgb) {
+  let l_val = lab.rgb_to_lab(rgb) in
+  let lch_val = lab.lab_to_lch(l_val) in
+  let r = cast.int(rgb.r * 255.0 + 0.5) in
+  let g = cast.int(rgb.g * 255.0 + 0.5) in
+  let b = cast.int(rgb.b * 255.0 + 0.5) in
+  {
+    cf_id:            make_cf_id(rgb),
+    hex:              str.concat(["#", str.lower(rgb_to_hex6(rgb))]),
+    rgb:              [r, g, b],
+    lab:              [round3(l_val.l), round3(l_val.a), round3(l_val.b)],
+    lch:              [round3(lch_val.l), round3(lch_val.c), round3(lch_val.h)],
+    identity_version: IDENTITY_VERSION
+  }
+}
+
+{
+  IDENTITY_VERSION: IDENTITY_VERSION,
+  make_cf_id:       make_cf_id,
+  make_entry:       make_entry,
+  rgb_to_hex6:      rgb_to_hex6,
+  lab_hash8:        lab_hash8,
+  round3:           round3,
+  byte_to_hex_upper: byte_to_hex_upper
+}
