@@ -1,20 +1,20 @@
 # Image Capture in FARD
 
-Tamper-evident image identity using the IF-Protocol-1.0.0 and PERC-1.0
-perceptual identity protocol. Written in FARD with four language ports.
+Tamper-evident image identity using IF-Protocol-1.0.0 and PERC-1.0.
+Written in FARD with four language ports and a live MacBook capture bridge.
 
 ## What this is
 
 Every image gets two identities:
 
 **IF-ID** (cryptographic) -- `IF-XXXXXXXXXXXX-XXXXXXXXXXXX`
-Derived from the exact pixel sequence via SHA-256. One changed pixel
-changes it completely. Used for tamper detection and chain-of-custody.
+Derived from the pixel sequence via SHA-256. One changed pixel changes
+it completely. Used for tamper detection and chain-of-custody.
 
 **PERC-ID** (perceptual) -- `PERC-XXXXXXXXXXXXXXXX-XXXXXXXX`
-Derived from a dHash (64-bit horizontal gradient) and a colour histogram
-sketch. Stable across JPEG re-encoding, moderate resize, and brightness
-changes. Used for near-duplicate detection (Hamming distance on dHash).
+Derived from a 64-bit dHash and a colour histogram sketch. Stable across
+JPEG re-encoding, moderate resize, and brightness changes. Used for
+near-duplicate detection (Hamming distance on dHash).
 
 Together they answer two different questions:
 - "Is this the exact same file?" -> compare IF-IDs
@@ -22,10 +22,10 @@ Together they answer two different questions:
 
 ## Specifications
 
-- `SPEC-IF-1.0.md` -- IF-Protocol-1.0.0: pixel_digest, receipt, IF-ID
+- `SPEC-IF-1.0.md`   -- IF-Protocol-1.0.0: pixel_digest, receipt, IF-ID
 - `SPEC-PERC-1.0.md` -- PERC-1.0: dHash, histogram sketch, PERC-ID
 - `conformance/if_vectors.json` -- canonical cross-language test vectors
-- `conformance/CONFORMANCE.md` -- conformance guide
+- `conformance/CONFORMANCE.md`  -- conformance guide
 
 ## Repository structure
 
@@ -38,38 +38,55 @@ Together they answer two different questions:
      vendor/              -- patched copies of cf_id, rgb_lab, kmeans etc.
 
    apps/
-     image_explain.fard   -- full identity profile for an image
-     image_diff.fard      -- compare two images (byte/pixel/IF-ID/palette)
-     image_claim.fard     -- create/verify tamper-evident IF-Claims
-     image_chain.fard     -- init/add/verify/show edit chains
+     image_explain.fard      -- full identity profile for any image
+     image_diff.fard         -- compare two images (byte/pixel/IF-ID/palette)
+     image_claim.fard        -- create/verify tamper-evident IF-Claims
+     image_chain.fard        -- init/add/verify/show edit chains
+     capture_explain.fard    -- IF-ID + PERC-ID for captured images,
+                                two-image comparison with Hamming similarity
 
-   tests/                 -- 58 FARD tests, 0 failures
+   tools/
+     capture_macbook.sh      -- MacBook camera capture bridge (imagesnap)
 
-   cfid_swift_if/         -- Swift port (Phase B.1), 9 tests
-   cfid_kotlin_if/        -- Kotlin port (Phase B.2), 9 tests
-   cfid_go_if/            -- Go port (Phase B.3), 9 tests
-   cfid_ts_if/            -- TypeScript port (Phase B.4), 9 tests
+   tests/                    -- 58 FARD tests, 0 failures
+
+   cfid_swift_if/            -- Swift port (Phase B.1), 9 tests
+   cfid_kotlin_if/           -- Kotlin port (Phase B.2), 9 tests
+   cfid_go_if/               -- Go port (Phase B.3), 9 tests
+   cfid_ts_if/               -- TypeScript port (Phase B.4), 9 tests
 
    conformance/
-     if_vectors.json      -- canonical pixel_digest + hash12 vectors
-     CONFORMANCE.md       -- conformance guide for new implementations
+     if_vectors.json         -- canonical pixel_digest + hash12 vectors
+     CONFORMANCE.md          -- conformance guide for new implementations
 
-## Running the apps
+## Capture bridge (Phase D)
 
-   # Full identity profile
-   fardrun run --program apps/image_explain.fard --out out/explain -- photo.jpg 4
+Requires imagesnap:
 
-   # Compare two images
-   fardrun run --program apps/image_diff.fard --out out/diff -- a.jpg b.jpg
+   brew install imagesnap
 
-   # Create a tamper-evident claim
-   fardrun run --program apps/image_claim.fard --out out/claim -- create photo.jpg
+Single capture with full identity profile:
 
-   # Verify a claim
-   fardrun run --program apps/image_claim.fard --out out/claim -- verify photo.jpg claim.json
+   bash tools/capture_macbook.sh
 
-   # Start an edit chain
-   fardrun run --program apps/image_chain.fard --out out/chain -- init photo.jpg
+Or manually:
+
+   imagesnap -w 1.5 out/captures/capture.jpg
+   sips -Z 320 out/captures/capture.jpg --out out/captures/capture_small.jpg
+   fardrun run --program apps/capture_explain.fard --out out/explain -- out/captures/capture_small.jpg 4
+
+Two-image comparison (PERC-ID similarity):
+
+   fardrun run --program apps/capture_explain.fard --out out/compare -- image_a.jpg image_b.jpg 4
+
+Example output from two consecutive MacBook captures of the same scene:
+
+   IF-ID:    IF-90970EA1914A-D501D653C694   (capture 1)
+   IF-ID:    IF-E94B5F1CDF32-7666419C6747   (capture 2)
+   PERC-ID:  PERC-0D4D78691838312A-0304080C (capture 1)
+   PERC-ID:  PERC-808088C85CD1FA32-0304080C (capture 2)
+   hist sketch: identical (0304080C) -- same dominant colour palette
+   dHash Hamming: 25 -- DIFFERENT (subject moved between captures)
 
 ## Running the tests
 
@@ -109,9 +126,9 @@ See `conformance/if_vectors.json` for the full conformance suite.
 | A | Full-res pixel identity, EXIF claims, conformance vectors | Complete |
 | B | Swift, Kotlin, Go, TypeScript ports + conformance suite | Complete |
 | C | Perceptual identity (dHash + histogram sketch) | Complete |
-| D | Native apps (iOS D.1, Android D.2) | Not started (requires Apple/Google accounts) |
-| E | Browser/extension surfaces | Not started (requires browser store accounts) |
-| F | W3C submission, governance | Not started (requires W3C membership) |
+| D | Local camera capture bridge (MacBook) | Complete |
+| E | Capture validation experiments (PERC-ID stability) | Not started |
+| F | Live capture protocol (frame chains, video keyframes) | Not started |
 
 ## Stats
 
@@ -119,3 +136,4 @@ See `conformance/if_vectors.json` for the full conformance suite.
 - 58 FARD tests, 36 language port tests
 - 94 total tests, 0 failures
 - 5 implementations (FARD + Swift + Kotlin + Go + TypeScript)
+- Live MacBook camera capture bridge working end-to-end
