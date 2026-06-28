@@ -1,0 +1,15 @@
+{
+ "name": "ifreceipt",
+ "version": "1.0.0",
+ "description": "IF-Protocol-1.0.0 image identity in TypeScript",
+ "main": "dist/index.js",
+ "types": "dist/index.d.ts",
+ "scripts": {
+  "build": "tsc",
+  "test": "node --test test/index.test.mjs"
+ },
+ "devDependencies": {
+  "@types/node": "^26.0.1",
+  "typescript": "^5.0.0"
+ }
+}
