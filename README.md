@@ -127,7 +127,7 @@ See `conformance/if_vectors.json` for the full conformance suite.
 | B | Swift, Kotlin, Go, TypeScript ports + conformance suite | Complete |
 | C | Perceptual identity (dHash + histogram sketch) | Complete |
 | D | Local camera capture bridge (MacBook) | Complete |
-| E | Capture validation experiments (PERC-ID stability) | Not started |
+| E | Capture validation experiments (PERC-ID stability) | In progress |
 | F | Live capture protocol (frame chains, video keyframes) | Not started |
 
 ## Stats
@@ -137,3 +137,4 @@ See `conformance/if_vectors.json` for the full conformance suite.
 - 94 total tests, 0 failures
 - 5 implementations (FARD + Swift + Kotlin + Go + TypeScript)
 - Live MacBook camera capture bridge working end-to-end
+- Phase E.1 stability result: 5 still captures, hist sketch identical, dHash Hamming max=5 (STABLE)
