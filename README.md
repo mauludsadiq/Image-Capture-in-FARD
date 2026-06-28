@@ -109,9 +109,9 @@ See `conformance/if_vectors.json` for the full conformance suite.
 | A | Full-res pixel identity, EXIF claims, conformance vectors | Complete |
 | B | Swift, Kotlin, Go, TypeScript ports + conformance suite | Complete |
 | C | Perceptual identity (dHash + histogram sketch) | Complete |
-| D | Native apps (iOS D.1, Android D.2) | Blocked (store accounts) |
-| E | Browser/extension surfaces | Blocked (store accounts) |
-| F | W3C submission, governance | Blocked (organisations) |
+| D | Native apps (iOS D.1, Android D.2) | Not started (requires Apple/Google accounts) |
+| E | Browser/extension surfaces | Not started (requires browser store accounts) |
+| F | W3C submission, governance | Not started (requires W3C membership) |
 
 ## Stats
 
