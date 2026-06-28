@@ -1,4 +1,0 @@
-module IFReceiptPackageTests {
-    header "/Users/g.bogans/Downloads/Image Capture in FARD/cfid_swift_if/.build/arm64-apple-macosx/debug/IFReceiptPackageTests.build/IFReceiptPackageTests-Swift.h"
-    requires objc
-}
