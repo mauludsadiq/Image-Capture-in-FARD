@@ -1,0 +1,165 @@
+import("std/list") as list
+import("std/str") as str
+import("std/cast") as cast
+import("std/io") as io
+import("std/cli") as cli
+import("std/fs") as fs
+import("std/hash") as hash
+import("std/bytes") as bytes_mod
+import("std/json") as json
+import("../src/core/image_receipt") as receipt_mod
+import("../src/core/image_read") as imgread
+
+// image_claim.fard -- create and verify self-contained IF-Protocol image claims.
+//
+// An image claim is an image receipt wrapped in a tamper-evident envelope:
+// the claim_digest binds all fields together, so any post-hoc edit to any
+// field (pixel_digest, if_id, palette, source claims, etc.) is immediately
+// detectable.
+//
+// Usage:
+//   image_claim create <image_path> <name> <out.json> [palette_k]
+//   image_claim verify <claim.json>
+
+fn detect_format(path) {
+  if str.ends_with(path, ".png") then "png"
+  else if str.ends_with(path, ".jpg") || str.ends_with(path, ".jpeg") then "jpeg"
+  else if str.ends_with(path, ".bmp") then "bmp"
+  else "unknown"
+}
+
+fn make_claim(receipt, name) {
+  let claim_without_digest = {
+    claim_version:  "IF-Claim-1.0.0",
+    name:           name,
+    if_id:          receipt.if_id,
+    pixel_digest:   receipt.pixel_digest,
+    byte_digest:    receipt.byte_digest,
+    format:         receipt.format,
+    width:          receipt.width,
+    height:         receipt.height,
+    colorspace:     receipt.colorspace,
+    icc_digest:     receipt.icc_digest,
+    orientation:    receipt.orientation,
+    palette:        receipt.palette,
+    parent_if_id:   receipt.parent_if_id,
+    operation:      receipt.operation,
+    source:         receipt.source,
+    receipt_digest: receipt.receipt_digest
+  } in
+  let digest = hash.sha256_text(json.encode(claim_without_digest)) in
+  {
+    claim_version:  claim_without_digest.claim_version,
+    name:           claim_without_digest.name,
+    if_id:          claim_without_digest.if_id,
+    pixel_digest:   claim_without_digest.pixel_digest,
+    byte_digest:    claim_without_digest.byte_digest,
+    format:         claim_without_digest.format,
+    width:          claim_without_digest.width,
+    height:         claim_without_digest.height,
+    colorspace:     claim_without_digest.colorspace,
+    icc_digest:     claim_without_digest.icc_digest,
+    orientation:    claim_without_digest.orientation,
+    palette:        claim_without_digest.palette,
+    parent_if_id:   claim_without_digest.parent_if_id,
+    operation:      claim_without_digest.operation,
+    source:         claim_without_digest.source,
+    receipt_digest: claim_without_digest.receipt_digest,
+    claim_digest:   digest
+  }
+}
+
+fn verify_claim(claim) {
+  let claim_without_digest = {
+    claim_version:  claim.claim_version,
+    name:           claim.name,
+    if_id:          claim.if_id,
+    pixel_digest:   claim.pixel_digest,
+    byte_digest:    claim.byte_digest,
+    format:         claim.format,
+    width:          claim.width,
+    height:         claim.height,
+    colorspace:     claim.colorspace,
+    icc_digest:     claim.icc_digest,
+    orientation:    claim.orientation,
+    palette:        claim.palette,
+    parent_if_id:   claim.parent_if_id,
+    operation:      claim.operation,
+    source:         claim.source,
+    receipt_digest: claim.receipt_digest
+  } in
+  let expected = hash.sha256_text(json.encode(claim_without_digest)) in
+  if claim.claim_digest != expected then
+    { valid: false, reason: "claim_digest mismatch -- claim has been tampered with" }
+  else
+    { valid: true, reason: "ok" }
+}
+
+fn create_cmd(args) {
+  if list.len(args) < 4 then
+    io.println("usage: image_claim create <image_path> <name> <out.json> [palette_k]")
+  else
+    let path = list.get(args, 1) in
+    let name = list.get(args, 2) in
+    let out_path = list.get(args, 3) in
+    let k = if list.len(args) > 4 then cast.int(list.get(args, 4)) else 4 in
+
+    let raw_bytes = fs.read_bytes(path) in
+    let byte_dig = str.concat(["sha256:", bytes_mod.to_hex(hash.sha256_bytes(raw_bytes))]) in
+    let pixels = imgread.read_image_pixels(path, 16) in
+
+    let fields = {
+      pixels:       pixels,
+      byte_digest:  byte_dig,
+      format:       detect_format(path),
+      width:        0,
+      height:       list.len(pixels),
+      colorspace:   "sRGB",
+      icc_digest:   null,
+      orientation:  1,
+      palette_k:    k,
+      source:       receipt_mod.no_source(),
+      parent_if_id: null,
+      operation:    "original",
+      params:       null
+    } in
+
+    let receipt = receipt_mod.make_receipt(fields) in
+    let claim = make_claim(receipt, name) in
+    let _ = fs.write_text(out_path, json.encode(claim)) in
+
+    let _ = io.println(str.concat(["claim created: ", out_path])) in
+    let _ = io.println(str.concat(["  name:    ", claim.name])) in
+    let _ = io.println(str.concat(["  IF-ID:   ", claim.if_id])) in
+    let _ = io.println(str.concat(["  pixel:   ", claim.pixel_digest])) in
+    io.println(str.concat(["  digest:  ", claim.claim_digest]))
+}
+
+fn verify_cmd(args) {
+  if list.len(args) < 2 then
+    io.println("usage: image_claim verify <claim.json>")
+  else
+    let path = list.get(args, 1) in
+    let claim = json.decode(fs.read_text(path)) in
+    let result = verify_claim(claim) in
+    let _ = io.println(str.concat(["claim:  ", path])) in
+    let _ = io.println(str.concat(["name:   ", claim.name])) in
+    let _ = io.println(str.concat(["IF-ID:  ", claim.if_id])) in
+    if result.valid then
+      io.println("VALID -- if_id matches pixel_digest, claim_digest matches content")
+    else
+      io.println(str.concat(["INVALID -- ", result.reason]))
+}
+
+fn main() {
+  let args = cli.args() in
+  if list.len(args) == 0 then
+    io.println("usage: image_claim create <image_path> <name> <out.json> | image_claim verify <claim.json>")
+  else
+    let cmd = list.get(args, 0) in
+    if cmd == "create" then create_cmd(args)
+    else if cmd == "verify" then verify_cmd(args)
+    else io.println(str.concat(["error: unknown command '", cmd, "'"]))
+}
+
+main()

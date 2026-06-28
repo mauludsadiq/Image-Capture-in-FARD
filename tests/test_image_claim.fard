@@ -1,0 +1,124 @@
+import("std/list") as list
+import("std/str") as str
+import("std/hash") as hash
+import("std/json") as json
+import("../src/core/image_receipt") as receipt_mod
+
+fn rgb(r,g,b) { { r: r, g: g, b: b } }
+
+let PIXELS = [rgb(1.0,0.0,0.0), rgb(0.0,1.0,0.0), rgb(0.0,0.0,1.0), rgb(1.0,1.0,0.0)]
+
+fn make_receipt(pixels) {
+  receipt_mod.make_receipt({
+    pixels: pixels, byte_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    format: "png", width: 4, height: 1, colorspace: "sRGB", icc_digest: null,
+    orientation: 1, palette_k: 2, source: receipt_mod.no_source(),
+    parent_if_id: null, operation: "original", params: null
+  })
+}
+
+fn make_claim(receipt, name) {
+  let cwd = {
+    claim_version: "IF-Claim-1.0.0", name: name, if_id: receipt.if_id,
+    pixel_digest: receipt.pixel_digest, byte_digest: receipt.byte_digest,
+    format: receipt.format, width: receipt.width, height: receipt.height,
+    colorspace: receipt.colorspace, icc_digest: receipt.icc_digest,
+    orientation: receipt.orientation, palette: receipt.palette,
+    parent_if_id: receipt.parent_if_id, operation: receipt.operation,
+    source: receipt.source, receipt_digest: receipt.receipt_digest
+  } in
+  let digest = hash.sha256_text(json.encode(cwd)) in
+  {
+    claim_version: cwd.claim_version, name: cwd.name, if_id: cwd.if_id,
+    pixel_digest: cwd.pixel_digest, byte_digest: cwd.byte_digest,
+    format: cwd.format, width: cwd.width, height: cwd.height,
+    colorspace: cwd.colorspace, icc_digest: cwd.icc_digest,
+    orientation: cwd.orientation, palette: cwd.palette,
+    parent_if_id: cwd.parent_if_id, operation: cwd.operation,
+    source: cwd.source, receipt_digest: cwd.receipt_digest,
+    claim_digest: digest
+  }
+}
+
+fn verify_claim(claim) {
+  let cwd = {
+    claim_version: claim.claim_version, name: claim.name, if_id: claim.if_id,
+    pixel_digest: claim.pixel_digest, byte_digest: claim.byte_digest,
+    format: claim.format, width: claim.width, height: claim.height,
+    colorspace: claim.colorspace, icc_digest: claim.icc_digest,
+    orientation: claim.orientation, palette: claim.palette,
+    parent_if_id: claim.parent_if_id, operation: claim.operation,
+    source: claim.source, receipt_digest: claim.receipt_digest
+  } in
+  let expected = hash.sha256_text(json.encode(cwd)) in
+  if claim.claim_digest != expected then
+    { valid: false, reason: "claim_digest mismatch" }
+  else
+    { valid: true, reason: "ok" }
+}
+
+test "freshly made claim verifies as valid" {
+  let r = make_receipt(PIXELS) in
+  let c = make_claim(r, "Test Image") in
+  verify_claim(c).valid
+}
+
+test "claim has correct claim_version" {
+  let r = make_receipt(PIXELS) in
+  let c = make_claim(r, "Test") in
+  c.claim_version == "IF-Claim-1.0.0"
+}
+
+test "claim if_id matches receipt if_id" {
+  let r = make_receipt(PIXELS) in
+  let c = make_claim(r, "Test") in
+  c.if_id == r.if_id
+}
+
+test "claim is deterministic" {
+  let r = make_receipt(PIXELS) in
+  let c1 = make_claim(r, "Test") in
+  let c2 = make_claim(r, "Test") in
+  c1.claim_digest == c2.claim_digest
+}
+
+test "tampered if_id is detected" {
+  let r = make_receipt(PIXELS) in
+  let c = make_claim(r, "Test") in
+  let tampered = {
+    claim_version: c.claim_version, name: c.name,
+    if_id: "IF-000000000000-000000000000",
+    pixel_digest: c.pixel_digest, byte_digest: c.byte_digest,
+    format: c.format, width: c.width, height: c.height,
+    colorspace: c.colorspace, icc_digest: c.icc_digest,
+    orientation: c.orientation, palette: c.palette,
+    parent_if_id: c.parent_if_id, operation: c.operation,
+    source: c.source, receipt_digest: c.receipt_digest,
+    claim_digest: c.claim_digest
+  } in
+  !verify_claim(tampered).valid
+}
+
+test "tampered name is detected" {
+  let r = make_receipt(PIXELS) in
+  let c = make_claim(r, "Test") in
+  let tampered = {
+    claim_version: c.claim_version, name: "FAKE NAME",
+    if_id: c.if_id, pixel_digest: c.pixel_digest, byte_digest: c.byte_digest,
+    format: c.format, width: c.width, height: c.height,
+    colorspace: c.colorspace, icc_digest: c.icc_digest,
+    orientation: c.orientation, palette: c.palette,
+    parent_if_id: c.parent_if_id, operation: c.operation,
+    source: c.source, receipt_digest: c.receipt_digest,
+    claim_digest: c.claim_digest
+  } in
+  !verify_claim(tampered).valid
+}
+
+test "different images produce different claim_digest" {
+  let r1 = make_receipt(PIXELS) in
+  let r2 = make_receipt([rgb(0.5,0.5,0.5)]) in
+  let c1 = make_claim(r1, "Test") in
+  let c2 = make_claim(r2, "Test") in
+  c1.claim_digest != c2.claim_digest
+}
