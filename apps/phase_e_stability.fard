@@ -1,0 +1,71 @@
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("std/cli") as cli
+import("../src/core/image_read") as imgread
+import("../src/core/perc_id") as perc
+
+// phase_e_stability.fard -- compute dHash for each image and
+// pairwise Hamming distances to measure PERC-ID stability.
+
+let paths = [
+  "out/captures/phase_e_001_small.jpg",
+  "out/captures/phase_e_002_small.jpg",
+  "out/captures/phase_e_003_small.jpg",
+  "out/captures/phase_e_004_small.jpg",
+  "out/captures/phase_e_005_small.jpg"
+] in
+
+let _ = io.println("==> Phase E: PERC-ID stability across 5 still captures") in
+let _ = io.println("") in
+
+// Compute dHash for each image
+let hashes = list.map(paths, fn(path) {
+  let pixels = imgread.read_image_pixels(path, 128) in
+  let dh = perc.dhash16(pixels, 128, 72) in
+  let hs = perc.hist_sketch(pixels) in
+  let _ = io.println(str.concat(["  ", path])) in
+  let _ = io.println(str.concat(["  dHash: ", dh, "  hist: ", hs])) in
+  let _ = io.println("") in
+  { path: path, dhash: dh, hist: hs }
+}) in
+
+let _ = io.println("==> Pairwise Hamming distances (dHash):") in
+let _ = io.println("") in
+let _ = io.println("       001  002  003  004  005") in
+
+let _ = list.fold(hashes, 0, fn(i, a) {
+  let row = list.fold(hashes, str.concat(["  ", str.from_int(i+1), "  "]), fn(acc, b) {
+    let h = perc.hamming(a.dhash, b.dhash) in
+    let hs = if h < 10 then str.concat([" ", str.from_int(h)]) else str.from_int(h) in
+    str.concat([acc, "  ", hs, " "])
+  }) in
+  let _ = io.println(row) in
+  i + 1
+}) in
+
+let _ = io.println("") in
+let _ = io.println("==> Histogram sketches:") in
+let same_hist = list.fold(hashes, true, fn(acc, h) {
+  acc && h.hist == list.get(hashes, 0).hist
+}) in
+let _ = io.println(str.concat(["  all same: ", if same_hist then "YES" else "NO"])) in
+
+// Max off-diagonal Hamming
+let _ = io.println("") in
+let _ = io.println("==> Summary:") in
+let all_pairs = list.build(list.len(hashes) * list.len(hashes), fn(i) {
+  let r = i / list.len(hashes) in
+  let c = i % list.len(hashes) in
+  if r == c then 0
+  else perc.hamming(list.get(hashes, r).dhash, list.get(hashes, c).dhash)
+}) in
+let max_h = list.fold(all_pairs, 0, fn(acc, h) { if h > acc then h else acc }) in
+let min_h = list.fold(all_pairs, 64, fn(acc, h) { if h > 0 && h < acc then h else acc }) in
+let _ = io.println(str.concat(["  min Hamming (non-self): ", str.from_int(min_h)])) in
+let _ = io.println(str.concat(["  max Hamming:            ", str.from_int(max_h)])) in
+let _ = io.println(str.concat(["  verdict: ",
+  if max_h <= 5 then "STABLE -- all frames near-duplicate"
+  else if max_h <= 10 then "MOSTLY STABLE -- slight movement detected"
+  else "UNSTABLE -- significant variation between frames"])) in
+null
