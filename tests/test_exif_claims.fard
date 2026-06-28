@@ -1,0 +1,37 @@
+import("std/str") as str
+import("std/list") as list
+import("../src/core/exif_claims") as exif
+
+test "extract_exif_claims returns a record with expected fields" {
+  let claims = exif.extract_exif_claims("out/colorful.png") in
+  claims.device_claim == null &&
+  claims.timestamp == null &&
+  claims.location_claim == null &&
+  claims.sensor_profile_digest == null &&
+  claims.lens_profile_digest == null
+}
+
+test "extract_exif_claims returns dpi for a PNG" {
+  let claims = exif.extract_exif_claims("out/colorful.png") in
+  claims.dpi != null
+}
+
+test "extract_exif_claims returns format_claim for a PNG" {
+  let claims = exif.extract_exif_claims("out/colorful.png") in
+  claims.format_claim != null && str.contains(claims.format_claim, "png")
+}
+
+test "claims_to_source produces a valid source block" {
+  let claims = exif.extract_exif_claims("out/colorful.png") in
+  let source = exif.claims_to_source(claims) in
+  source.device_claim == null &&
+  source.sensor_profile_digest == null &&
+  source.lens_profile_digest == null &&
+  source.timestamp == null &&
+  source.location_claim == null
+}
+
+test "extract_exif_claims on nonexistent file returns null fields gracefully" {
+  let claims = exif.extract_exif_claims("out/nonexistent_file.png") in
+  claims.device_claim == null && claims.timestamp == null
+}

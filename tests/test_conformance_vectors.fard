@@ -1,0 +1,46 @@
+import("std/str") as str
+import("std/list") as list
+import("std/cast") as cast
+import("../src/core/if_id") as ifid
+
+// Canonical test vectors from SPEC-IF-1.0.md Appendix A.
+// These MUST pass in any conformant IF-Protocol-1.0.0 implementation.
+
+let COLORFUL_PIXEL_DIGEST = "sha256:2a40854db5a950bbdc8d921620a2ee8074fb8b950102150b6be7b10990e1ddb6"
+let COLORFUL_PIXELHASH12  = "2A40854DB5A9"
+
+// The 4x4 colorful PNG pixels: colors cycling (x+y) % 4 across a 4x4 grid.
+// colors = [(220,50,50), (50,180,80), (50,90,220), (240,200,40)]
+let COLORS = [
+  { r: 220, g: 50,  b: 50  },
+  { r: 50,  g: 180, b: 80  },
+  { r: 50,  g: 90,  b: 220 },
+  { r: 240, g: 200, b: 40  }
+]
+
+let PIXELS_F = list.map(
+  list.build(16, fn(i) {
+    let x = i % 4 in
+    let y = i / 4 in
+    list.get(COLORS, (x + y) % 4)
+  }),
+  fn(p) {
+    { r: cast.float(p.r) / 255.0,
+      g: cast.float(p.g) / 255.0,
+      b: cast.float(p.b) / 255.0 }
+  }
+)
+
+test "canonical pixel_digest vector: colorful 4x4 PNG" {
+  ifid.pixel_digest_canonical(PIXELS_F) == COLORFUL_PIXEL_DIGEST
+}
+
+test "canonical PIXELHASH12 from pixel_digest" {
+  ifid.hash12(COLORFUL_PIXEL_DIGEST) == COLORFUL_PIXELHASH12
+}
+
+test "IF-ID format: 28 chars, starts with IF-" {
+  let rd = "sha256:0000000000000000000000000000000000000000000000000000000000000000" in
+  let id = ifid.make_if_id(COLORFUL_PIXEL_DIGEST, rd) in
+  str.len(id) == 28 && str.starts_with(id, "IF-")
+}

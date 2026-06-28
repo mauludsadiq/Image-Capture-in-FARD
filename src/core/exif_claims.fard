@@ -1,0 +1,110 @@
+import("std/process") as process
+import("std/str") as str
+import("std/list") as list
+
+// exif_claims.fard -- extract image metadata via sips and return as
+// an IF-Protocol source claims record.
+//
+// Per SPEC-IF-1.0.md section 4: EXIF fields are CLAIMS, not verified
+// facts. They are recorded as-is from the file metadata, with no
+// attempt to verify their authenticity. Treat them with the same
+// scepticism as any self-reported metadata.
+//
+// Returns a source record with fields:
+//   timestamp             EXIF DateTimeOriginal or null
+//   device_claim          EXIF Make + Model or null
+//   sensor_profile_digest null (requires hardware access)
+//   lens_profile_digest   null (requires hardware access)
+//   location_claim        EXIF GPS as "lat,lon" string or null
+//   colorspace_claim      sips colorspace field or null
+//   dpi                   sips dpiWidth x dpiHeight or null
+//   format_claim          sips typeIdentifier or null
+//   orientation_raw       EXIF Orientation tag value or null
+
+fn parse_sips_line(line) {
+  let trimmed = str.trim(line) in
+  if str.contains(trimmed, ": ") then
+    let parts = str.split(trimmed, ": ") in
+    if list.len(parts) >= 2 then
+      { key: list.get(parts, 0), value: list.get(parts, 1) }
+    else
+      { key: trimmed, value: "" }
+  else
+    { key: trimmed, value: "" }
+}
+
+fn find_val(pairs, key) {
+  list.fold(pairs, null, fn(acc, p) {
+    if p.key == key then p.value else acc
+  })
+}
+
+fn extract_exif_claims(path) {
+  let step = process.capture("sips", ["-g", "all", path]) in
+  if !step.ok then
+    {
+      timestamp:             null,
+      device_claim:          null,
+      sensor_profile_digest: null,
+      lens_profile_digest:   null,
+      location_claim:        null,
+      colorspace_claim:      null,
+      dpi:                   null,
+      format_claim:          null,
+      orientation_raw:       null
+    }
+  else
+    let lines = str.split(step.stdout, "\n") in
+    let pairs = list.map(lines, fn(l) { parse_sips_line(l) }) in
+
+    let ts        = find_val(pairs, "dateTimeOriginal") in
+    let make      = find_val(pairs, "make") in
+    let model     = find_val(pairs, "model") in
+    let lat       = find_val(pairs, "latitude") in
+    let lon       = find_val(pairs, "longitude") in
+    let cs        = find_val(pairs, "space") in
+    let dpiw      = find_val(pairs, "dpiWidth") in
+    let dpih      = find_val(pairs, "dpiHeight") in
+    let fmt       = find_val(pairs, "typeIdentifier") in
+    let orient    = find_val(pairs, "orientation") in
+
+    let device = if make == null && model == null then null
+                 else if make == null then model
+                 else if model == null then make
+                 else str.concat([make, " ", model]) in
+
+    let location = if lat == null || lon == null then null
+                   else str.concat([lat, ",", lon]) in
+
+    let dpi = if dpiw == null || dpih == null then null
+              else str.concat([dpiw, "x", dpih]) in
+
+    {
+      timestamp:             ts,
+      device_claim:          device,
+      sensor_profile_digest: null,
+      lens_profile_digest:   null,
+      location_claim:        location,
+      colorspace_claim:      cs,
+      dpi:                   dpi,
+      format_claim:          fmt,
+      orientation_raw:       orient
+    }
+}
+
+// Convert extracted claims to the IF-Protocol source block.
+// The source block is what gets embedded in the receipt.
+fn claims_to_source(claims) {
+  {
+    device_claim:          claims.device_claim,
+    sensor_profile_digest: claims.sensor_profile_digest,
+    lens_profile_digest:   claims.lens_profile_digest,
+    timestamp:             claims.timestamp,
+    location_claim:        claims.location_claim
+  }
+}
+
+{
+  extract_exif_claims: extract_exif_claims,
+  claims_to_source:    claims_to_source
+}

@@ -7,6 +7,7 @@ import("std/fs") as fs
 import("std/hash") as hash
 import("std/bytes") as bytes_mod
 import("../src/core/image_receipt") as receipt_mod
+import("../src/core/exif_claims") as exif
 import("../src/core/if_id") as ifid
 import("../src/core/image_read") as imgread
 import("../src/core/vendor/wcag") as wcag
@@ -85,18 +86,22 @@ fn main() {
       let use_pixels = if n > 0 then pixels else thumb in
       let format = detect_format(path) in
 
+      let claims = exif.extract_exif_claims(path) in
+      let source = exif.claims_to_source(claims) in
+      let colorspace = if claims.colorspace_claim == null then "sRGB" else claims.colorspace_claim in
+
       let fields = {
         pixels:       use_pixels,
         thumb_pixels: if n_thumb > 0 then thumb else null,
         byte_digest:  byte_dig,
-        format:       format,
+        format:       if claims.format_claim == null then format else format,
         width:        dims.width,
         height:       dims.height,
-        colorspace:   "sRGB",
+        colorspace:   colorspace,
         icc_digest:   null,
         orientation:  1,
         palette_k:    k,
-        source:       receipt_mod.no_source(),
+        source:       source,
         parent_if_id: null,
         operation:    "original",
         params:       null
@@ -116,6 +121,12 @@ fn main() {
       let _ = io.println(str.concat(["orientation:   ", str.from_int(receipt.orientation)])) in
       let _ = io.println(str.concat(["dimensions:    ", str.from_int(dims.width), "x", str.from_int(dims.height)])) in
       let _ = io.println(str.concat(["pixels (full): ", str.from_int(list.len(use_pixels))])) in
+      let _ = io.println("") in
+      let _ = io.println("source claims (from EXIF -- unverified):") in
+      let _ = io.println(str.concat(["  device:    ", if claims.device_claim == null then "null" else claims.device_claim])) in
+      let _ = io.println(str.concat(["  timestamp: ", if claims.timestamp == null then "null" else claims.timestamp])) in
+      let _ = io.println(str.concat(["  location:  ", if claims.location_claim == null then "null" else claims.location_claim])) in
+      let _ = io.println(str.concat(["  dpi:       ", if claims.dpi == null then "null" else claims.dpi])) in
       let _ = io.println("") in
       let _ = io.println(str.concat(["dominant palette (k=", str.from_int(k), "):"])) in
       list.fold(receipt.palette, 1, fn(i, entry) {
