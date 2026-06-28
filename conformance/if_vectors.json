@@ -1,0 +1,187 @@
+{
+  "suite_version": "IF-Conformance-1.0.0",
+  "spec_version": "IF-Protocol-1.0.0",
+  "description": "Canonical, language-neutral test vectors for IF-Protocol-1.0.0. Any conformant implementation MUST reproduce all values in this file exactly. Source: SPEC-IF-1.0.md Appendices A.",
+  "pixel_digest_vectors": [
+    {
+      "description": "4x4 colorful PNG: colors=[(220,50,50),(50,180,80),(50,90,220),(240,200,40)] cycling (x+y)%4 across a 4x4 grid, row-major order. Preimage: 'r0,g0,b0,r1,g1,b1,...,r15,g15,b15,' (comma-separated integers, trailing comma).",
+      "pixels": [
+        [
+          220,
+          50,
+          50
+        ],
+        [
+          50,
+          180,
+          80
+        ],
+        [
+          50,
+          90,
+          220
+        ],
+        [
+          240,
+          200,
+          40
+        ],
+        [
+          50,
+          180,
+          80
+        ],
+        [
+          50,
+          90,
+          220
+        ],
+        [
+          240,
+          200,
+          40
+        ],
+        [
+          220,
+          50,
+          50
+        ],
+        [
+          50,
+          90,
+          220
+        ],
+        [
+          240,
+          200,
+          40
+        ],
+        [
+          220,
+          50,
+          50
+        ],
+        [
+          50,
+          180,
+          80
+        ],
+        [
+          240,
+          200,
+          40
+        ],
+        [
+          220,
+          50,
+          50
+        ],
+        [
+          50,
+          180,
+          80
+        ],
+        [
+          50,
+          90,
+          220
+        ]
+      ],
+      "pixel_digest": "sha256:2a40854db5a950bbdc8d921620a2ee8074fb8b950102150b6be7b10990e1ddb6",
+      "pixelhash12": "2A40854DB5A9"
+    },
+    {
+      "description": "Single white pixel [255,255,255]. Preimage: '255,255,255,'",
+      "pixels": [
+        [
+          255,
+          255,
+          255
+        ]
+      ],
+      "pixel_digest": "sha256:57256bcede0ac3db4e96c4ee819b2a37d04547fd9eed4af79e2367110777244f",
+      "pixelhash12": "57256BCEDE0A"
+    },
+    {
+      "description": "Single black pixel [0,0,0]. Preimage: '0,0,0,'",
+      "pixels": [
+        [
+          0,
+          0,
+          0
+        ]
+      ],
+      "pixel_digest": "sha256:7a1ca330a8fd964bf3aa71489ffe00cfe421c32944ff6d2248847b1eb4cc385c",
+      "pixelhash12": "7A1CA330A8FD"
+    }
+  ],
+  "hash12_vectors": [
+    {
+      "input": "sha256:2a40854db5a950bbdc8d921620a2ee8074fb8b950102150b6be7b10990e1ddb6",
+      "expected": "2A40854DB5A9"
+    },
+    {
+      "input": "sha256:5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+      "expected": "5FECEB66FFC8"
+    },
+    {
+      "input": "sha256:57256bcede0ac3db4e96c4ee819b2a37d04547fd9eed4af79e2367110777244f",
+      "expected": "57256BCEDE0A"
+    },
+    {
+      "input": "sha256:7a1ca330a8fd964bf3aa71489ffe00cfe421c32944ff6d2248847b1eb4cc385c",
+      "expected": "7A1CA330A8FD"
+    }
+  ],
+  "if_id_format": {
+    "description": "IF-ID is always exactly 28 characters: 'IF-' (3) + 12 uppercase hex + '-' (1) + 12 uppercase hex.",
+    "length": 28,
+    "prefix": "IF-",
+    "pattern": "IF-[0-9A-F]{12}-[0-9A-F]{12}"
+  },
+  "receipt_invariants": {
+    "description": "These properties MUST hold for any conformant makeReceipt implementation.",
+    "invariants": [
+      "Same pixels + same receipt fields => same IF-ID (deterministic)",
+      "Different pixels => different pixel_digest",
+      "Metadata-only change (different byte_digest, same pixels) => same pixel_digest, different receipt_digest, different IF-ID",
+      "parent_if_id is null for operation='original'",
+      "if_version is always 'IF-CAPTURE-1.0.0'",
+      "pixel_sample_stride is 1 for full-resolution receipts",
+      "Tampering with any field after receipt creation => verify returns invalid"
+    ]
+  },
+  "canonical_preimage_format": {
+    "description": "The pixel_digest preimage is a UTF-8 string of comma-separated 8-bit integers with a trailing comma.",
+    "format": "r0,g0,b0,r1,g1,b1,...,rN,gN,bN,",
+    "example_single_red_pixel": "255,0,0,",
+    "example_two_pixels": "255,0,0,0,0,255,"
+  },
+  "implementations": [
+    {
+      "language": "FARD",
+      "path": "src/core/if_id.fard + src/core/image_receipt.fard",
+      "tests": "tests/test_if_id.fard + tests/test_image_receipt.fard"
+    },
+    {
+      "language": "Swift",
+      "path": "cfid_swift_if/Sources/IFReceipt/IFReceipt.swift",
+      "tests": "cfid_swift_if/Tests/IFReceiptTests/IFReceiptTests.swift"
+    },
+    {
+      "language": "Kotlin",
+      "path": "cfid_kotlin_if/src/main/kotlin/.../IFReceipt.kt",
+      "tests": "cfid_kotlin_if/src/test/kotlin/.../IFReceiptTest.kt"
+    },
+    {
+      "language": "Go",
+      "path": "cfid_go_if/ifreceipt.go",
+      "tests": "cfid_go_if/ifreceipt_test.go"
+    },
+    {
+      "language": "TypeScript",
+      "path": "cfid_ts_if/src/index.ts",
+      "tests": "cfid_ts_if/test/index.test.mjs"
+    }
+  ]
+}
