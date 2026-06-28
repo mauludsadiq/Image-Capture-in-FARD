@@ -1,168 +1,121 @@
 # Image Capture in FARD
 
-**Deterministic image identity and receipted capture.**
+Tamper-evident image identity using the IF-Protocol-1.0.0 and PERC-1.0
+perceptual identity protocol. Written in FARD with four language ports.
 
-Every image has a permanent, verifiable identity: an IF-ID, computed from
-its decoded pixels, not its file bytes. JPEG recompression changes bytes
-but not pixels; metadata edits change receipts but not pixel identity.
-IF Protocol separates these four identities simultaneously:
+## What this is
 
-   byte_digest    -- exact file identity (SHA-256 of raw file bytes)
-   pixel_digest   -- decoded pixel identity (SHA-256 of canonical RGB)
-   IF-ID          -- composite identity (pixel + receipt hash)
-   CF palette     -- every dominant colour identified by its CF-ID
+Every image gets two identities:
 
-Built on FARD and CF-Protocol-2.0.0 (Colour in FARD).
-2,001 lines of FARD, 38 tests, zero failures.
+**IF-ID** (cryptographic) -- `IF-XXXXXXXXXXXX-XXXXXXXXXXXX`
+Derived from the exact pixel sequence via SHA-256. One changed pixel
+changes it completely. Used for tamper detection and chain-of-custody.
 
----
+**PERC-ID** (perceptual) -- `PERC-XXXXXXXXXXXXXXXX-XXXXXXXX`
+Derived from a dHash (64-bit horizontal gradient) and a colour histogram
+sketch. Stable across JPEG re-encoding, moderate resize, and brightness
+changes. Used for near-duplicate detection (Hamming distance on dHash).
 
-## Quickstart
+Together they answer two different questions:
+- "Is this the exact same file?" -> compare IF-IDs
+- "Is this the same image?" -> compare PERC-IDs (Hamming <= 5 on dHash)
 
-Full identity profile for any image:
+## Specifications
 
-   fardrun run --program apps/image_explain.fard --out out/run -- photo.jpg
+- `SPEC-IF-1.0.md` -- IF-Protocol-1.0.0: pixel_digest, receipt, IF-ID
+- `SPEC-PERC-1.0.md` -- PERC-1.0: dHash, histogram sketch, PERC-ID
+- `conformance/if_vectors.json` -- canonical cross-language test vectors
+- `conformance/CONFORMANCE.md` -- conformance guide
 
-   IF-ID:         IF-8EDC2910BB67-4B902CEE5506
-   pixel_digest:  sha256:8edc2910bb67d837ddf1a5e0d2e23f86879c8254d5ce4e034e9d5301b40e9e30
-   byte_digest:   sha256:e358d4fdb4c1028bd902d8dfb8e50ae5e2a4547f523631bc59130d2767c55ac1
-   receipt_digest: sha256:4b902cee5506117dd1f609d0fb600eccfbe1c048170f9b69c1dbc8aab93703e3
-   format:        png
-   colorspace:    sRGB
-   dominant palette (k=4):
-     1. #cb5236  CF-CB5236-1EF4B185  contrast/white=4.38
-     2. #4e9d5c  CF-4E9D5C-B80A0AC5  contrast/white=3.33
-     3. #4e6fba  CF-4E6FBA-9EF205F1  contrast/white=4.88
-     4. #dcae3d  CF-DCAE3D-06F90470  contrast/white=2.07
+## Repository structure
 
-Compare two images across all four identities:
+   src/core/
+     if_id.fard           -- pixel_digest_canonical, make_if_id, hash12
+     image_receipt.fard   -- make_receipt, verify_receipt, build_palette
+     image_read.fard      -- read_image_pixels, read_image_full (via sips)
+     exif_claims.fard     -- extract_exif_claims (via sips -g all)
+     perc_id.fard         -- dhash16, hist_sketch, make_perc_id, hamming
+     vendor/              -- patched copies of cf_id, rgb_lab, kmeans etc.
 
-   fardrun run --program apps/image_diff.fard --out out/run -- original.jpg published.jpg
+   apps/
+     image_explain.fard   -- full identity profile for an image
+     image_diff.fard      -- compare two images (byte/pixel/IF-ID/palette)
+     image_claim.fard     -- create/verify tamper-evident IF-Claims
+     image_chain.fard     -- init/add/verify/show edit chains
 
-   byte changed?    YES
-   pixel changed?   no
-   IF-ID changed?   YES
-   palette changed? no
-   diagnosis: METADATA ONLY -- bytes differ but pixels are identical
+   tests/                 -- 58 FARD tests, 0 failures
 
-Create and verify a tamper-evident image claim:
+   cfid_swift_if/         -- Swift port (Phase B.1), 9 tests
+   cfid_kotlin_if/        -- Kotlin port (Phase B.2), 9 tests
+   cfid_go_if/            -- Go port (Phase B.3), 9 tests
+   cfid_ts_if/            -- TypeScript port (Phase B.4), 9 tests
 
-   fardrun run --program apps/image_claim.fard --out out/run -- create photo.jpg "Press photo 2024-06-28" out/claim.json
-   fardrun run --program apps/image_claim.fard --out out/run -- verify out/claim.json
+   conformance/
+     if_vectors.json      -- canonical pixel_digest + hash12 vectors
+     CONFORMANCE.md       -- conformance guide for new implementations
 
-   VALID -- if_id matches pixel_digest, claim_digest matches content
+## Running the apps
 
-Build and verify an edit chain:
+   # Full identity profile
+   fardrun run --program apps/image_explain.fard --out out/explain -- photo.jpg 4
 
-   fardrun run --program apps/image_chain.fard --out out/run -- init original.jpg out/chain
-   fardrun run --program apps/image_chain.fard --out out/run -- add out/chain crop
-   fardrun run --program apps/image_chain.fard --out out/run -- add out/chain compress cropped.jpg
-   fardrun run --program apps/image_chain.fard --out out/run -- verify out/chain
+   # Compare two images
+   fardrun run --program apps/image_diff.fard --out out/diff -- a.jpg b.jpg
 
-   step 0 (original)  IF-8EDC2910BB67-4B902CEE5506  VALID
-   step 1 (crop)      IF-E3B0C44298FC-6481F1E2EF7F  VALID
-   step 2 (compress)  IF-6821987238D5-137A3986935B  VALID
-   3/3 steps valid
+   # Create a tamper-evident claim
+   fardrun run --program apps/image_claim.fard --out out/claim -- create photo.jpg
 
----
+   # Verify a claim
+   fardrun run --program apps/image_claim.fard --out out/claim -- verify photo.jpg claim.json
 
-## Apps
+   # Start an edit chain
+   fardrun run --program apps/image_chain.fard --out out/chain -- init photo.jpg
 
-| App | Usage |
-|---|---|
-| apps/image_explain.fard | Full IF-ID profile: four identities + CF palette |
-| apps/image_diff.fard | Compare two images across all four identities |
-| apps/image_claim.fard | Create/verify tamper-evident IF-Protocol claims |
-| apps/image_chain.fard | Build/verify/show edit chains with parent linkage |
+## Running the tests
 
----
+   # FARD reference implementation (58 tests)
+   for f in tests/test_*.fard; do fardrun test --program $f; done
 
-## How It Works
+   # Swift port
+   cd cfid_swift_if && swift test
 
-**IF-ID.** Twenty-eight characters: IF-<PIXELHASH12>-<RECEIPTHASH12>.
-The pixel half is the first 12 uppercase hex characters of SHA-256 over
-the canonical pixel byte sequence (r0 g0 b0 r1 g1 b1 ... left-to-right,
-top-to-bottom, 8-bit sRGB). The receipt half is derived from the receipt
-JSON. Same decoded pixels always produce the same PIXELHASH12, regardless
-of file format, compression, or metadata.
+   # Kotlin port
+   cd cfid_kotlin_if
+   kotlinc src/main/kotlin/com/imagecapture/ifreceipt/IFReceipt.kt \
+           src/test/kotlin/com/imagecapture/ifreceipt/IFReceiptTest.kt \
+           -include-runtime -d test.jar
+   java -cp test.jar com.imagecapture.ifreceipt.IFReceiptTestKt
 
-**Four identities, cleanly separated.** A JPEG recompression changes
-byte_digest but not pixel_digest (if the pixels are visually identical
-after decoding). A metadata/EXIF edit changes byte_digest and
-receipt_digest but not pixel_digest. A crop or colour edit changes all
-four. image_diff diagnoses which category an edit falls into.
+   # Go port
+   cd cfid_go_if && go test ./...
 
-**Edit chains.** Each transformation step records the parent_if_id of
-the previous step, forming a verifiable chain from original capture to
-final published asset. Any step can be independently verified; a broken
-parent link is immediately detectable.
+   # TypeScript port
+   cd cfid_ts_if && npm install && npx tsc && node --test test/index.test.mjs
 
-**CF palette.** Every dominant colour in an image is identified by its
-CF-ID (from CF-Protocol-2.0.0), making the palette portable, verifiable,
-and consistent with the Colour in FARD ecosystem.
+## Conformance
 
-**EXIF is a claim, not truth.** IF Protocol records EXIF fields in the
-receipt source block but treats them as unverified claims. The pixel
-identity is independent of all metadata.
+All five implementations agree on the canonical pixel_digest vector
+from SPEC-IF-1.0.md Appendix A.1 (4x4 colorful test image):
 
----
+   sha256:2a40854db5a950bbdc8d921620a2ee8074fb8b950102150b6be7b10990e1ddb6
+   PIXELHASH12: 2A40854DB5A9
 
-## Architecture
+See `conformance/if_vectors.json` for the full conformance suite.
 
-   SPEC-IF-1.0.md               -- IF Protocol Specification v1.0.0
-   src/core/if_id.fard          -- pixel_digest_canonical, hash12, make_if_id
-   src/core/image_receipt.fard  -- make_receipt, verify_receipt, build_palette
-   src/core/image_read.fard     -- sips-based image pixel reader
-   src/core/vendor/             -- vendored CF-Protocol core (cf_id, rgb_lab, etc.)
-   apps/image_explain.fard      -- full identity profile
-   apps/image_diff.fard         -- four-identity image comparison
-   apps/image_claim.fard        -- tamper-evident image claims
-   apps/image_chain.fard        -- edit chain build/verify/show
-   tests/test_if_id.fard        -- 8 tests: hash12, pixel_digest, make_if_id
-   tests/test_image_receipt.fard -- 10 tests: make_receipt, verify_receipt, tamper
-   tests/test_image_diff.fard   -- 6 tests: diff logic across all four identities
-   tests/test_image_claim.fard  -- 7 tests: claim create/verify/tamper
-   tests/test_image_chain.fard  -- 7 tests: chain linkage, parent_if_id, verify
+## Status
 
----
+| Phase | Description | Status |
+|---|---|---|
+| A | Full-res pixel identity, EXIF claims, conformance vectors | Complete |
+| B | Swift, Kotlin, Go, TypeScript ports + conformance suite | Complete |
+| C | Perceptual identity (dHash + histogram sketch) | Complete |
+| D | Native apps (iOS D.1, Android D.2) | Blocked (store accounts) |
+| E | Browser/extension surfaces | Blocked (store accounts) |
+| F | W3C submission, governance | Blocked (organisations) |
 
-## Validation
+## Stats
 
-38 tests, 0 failures:
-
-- IF-ID format and length (IF-XXXXXXXXXXXX-XXXXXXXXXXXX, 28 chars)
-- Same pixels always produce the same pixel_digest and IF-ID
-- Different pixels produce different pixel_digest
-- Metadata-only change: same pixel_digest, different receipt_digest, different IF-ID
-- Tampered receipt_digest detected
-- Tampered claim fields (if_id, name) detected
-- Edit chain parent linkage verified
-- Broken chain linkage detectable
-- All steps in a 4-step chain verify as VALID
-
----
-
-## Relationship to Colour in FARD
-
-IF Protocol and CF-Protocol are independent but complementary:
-
-- CF-ID identifies a single 8-bit sRGB colour, permanently.
-- IF-ID identifies a decoded image, permanently.
-- Every pixel of an IF-ID image has a CF-ID.
-- An image palette is a list of CF-IDs derived from its pixels.
-
-IF Protocol depends on CF-Protocol-2.0.0 for palette generation.
-CF-Protocol has no dependency on IF Protocol.
-
-   Colour in FARD: https://github.com/mauludsadiq/Colour-in-Fard
-   IF Protocol:    https://github.com/mauludsadiq/Image-Capture-in-FARD
-
----
-
-## Built with FARD
-
-https://github.com/mauludsadiq/FARD
-
-## License
-
-MUI
+- 2,559 lines of FARD
+- 58 FARD tests, 36 language port tests
+- 94 total tests, 0 failures
+- 5 implementations (FARD + Swift + Kotlin + Go + TypeScript)
