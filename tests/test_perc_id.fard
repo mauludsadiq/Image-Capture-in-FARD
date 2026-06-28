@@ -1,0 +1,73 @@
+import("std/str") as str
+import("std/list") as list
+import("../src/core/perc_id") as perc
+
+let COLORS = [
+  { r: 220.0, g: 50.0,  b: 50.0  },
+  { r: 50.0,  g: 180.0, b: 80.0  },
+  { r: 50.0,  g: 90.0,  b: 220.0 },
+  { r: 240.0, g: 200.0, b: 40.0  }
+]
+
+let COLORFUL = list.build(16, fn(i) {
+  let x = i % 4 in
+  let y = i / 4 in
+  list.get(COLORS, (x + y) % 4)
+})
+
+let RED16   = list.build(16, fn(_) { { r: 255.0, g: 0.0, b: 0.0 } })
+let BLUE16  = list.build(16, fn(_) { { r: 0.0, g: 0.0, b: 255.0 } })
+// 9x9 uniform images always give all-zero dHash (no interpolation artefact)
+let RED81   = list.build(81, fn(_) { { r: 255.0, g: 0.0, b: 0.0 } })
+let BLUE81  = list.build(81, fn(_) { { r: 0.0, g: 0.0, b: 255.0 } })
+
+test "dhash16 returns 16 uppercase hex chars" {
+  str.len(perc.dhash16(COLORFUL, 4, 4)) == 16
+}
+
+test "dhash16 uniform 9x9 red image is all zeros" {
+  perc.dhash16(RED81, 9, 9) == "0000000000000000"
+}
+
+test "dhash16 uniform 9x9 blue image is all zeros" {
+  perc.dhash16(BLUE81, 9, 9) == "0000000000000000"
+}
+
+test "dhash16 same image -> same hash (deterministic)" {
+  perc.dhash16(COLORFUL, 4, 4) == perc.dhash16(COLORFUL, 4, 4)
+}
+
+test "dhash16 different images -> different hash" {
+  perc.dhash16(COLORFUL, 4, 4) != perc.dhash16(RED16, 4, 4)
+}
+
+test "hamming of identical hashes is 0" {
+  let d = perc.dhash16(COLORFUL, 4, 4) in
+  perc.hamming(d, d) == 0
+}
+
+test "hamming of all-zeros and all-ones is 64" {
+  perc.hamming("0000000000000000", "FFFFFFFFFFFFFFFF") == 64
+}
+
+test "hist_sketch returns 8 uppercase hex chars" {
+  str.len(perc.hist_sketch(COLORFUL)) == 8
+}
+
+test "hist_sketch same pixels -> same sketch (deterministic)" {
+  perc.hist_sketch(RED16) == perc.hist_sketch(RED16)
+}
+
+test "hist_sketch different palette -> different sketch" {
+  perc.hist_sketch(RED16) != perc.hist_sketch(BLUE16)
+}
+
+test "make_perc_id returns 28-char string starting with PERC-" {
+  let id = perc.make_perc_id(COLORFUL, 4, 4) in
+  str.len(id) == 30 && str.starts_with(id, "PERC-")
+}
+
+test "make_perc_id returns null for tiny image (< 9 pixels)" {
+  let tiny = list.build(4, fn(_) { { r: 255.0, g: 0.0, b: 0.0 } }) in
+  perc.make_perc_id(tiny, 2, 2) == null
+}

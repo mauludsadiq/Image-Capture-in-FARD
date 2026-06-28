@@ -1,0 +1,201 @@
+import("std/list") as list
+import("std/cast") as cast
+import("std/str") as str
+
+// perc_id.fard -- SPEC-PERC-1.0 perceptual identity.
+//
+// Exports:
+//   dhash64(pixels, width, height)  -> 64-bit dHash as integer
+//   dhash16(pixels, width, height)  -> DHASH16 uppercase hex string
+//   hist_sketch(pixels)             -> HISTSKETCH8 uppercase hex string
+//   make_perc_id(pixels, width, height) -> "PERC-<DHASH16>-<HISTSKETCH8>"
+//   hamming(a, b)                   -> bit distance between two dHash ints
+
+// -- Grayscale helpers --
+
+fn luminance(r, g, b) {
+  0.299 * r + 0.587 * g + 0.114 * b
+}
+
+// -- Bilinear resize to target_w x target_h --
+// Returns flat list of grayscale floats [0,255], row-major.
+
+fn resize_gray(pixels, src_w, src_h, tgt_w, tgt_h) {
+  list.build(tgt_h * tgt_w, fn(i) {
+    let ty = i / tgt_w in
+    let tx = i % tgt_w in
+    // Map target pixel centre to source coordinates
+    let sx = (cast.float(tx) + 0.5) * cast.float(src_w) / cast.float(tgt_w) - 0.5 in
+    let sy = (cast.float(ty) + 0.5) * cast.float(src_h) / cast.float(tgt_h) - 0.5 in
+    let x0 = cast.int(sx) in
+    let y0 = cast.int(sy) in
+    let x1 = if x0 + 1 < src_w then x0 + 1 else src_w - 1 in
+    let y1 = if y0 + 1 < src_h then y0 + 1 else src_h - 1 in
+    let x0c = if x0 < 0 then 0 else x0 in
+    let y0c = if y0 < 0 then 0 else y0 in
+    let dx = sx - cast.float(x0) in
+    let dy = sy - cast.float(y0) in
+    let p = list.get(pixels, y0c * src_w + x0c) in
+    let q = list.get(pixels, y0c * src_w + x1) in
+    let r = list.get(pixels, y1  * src_w + x0c) in
+    let s = list.get(pixels, y1  * src_w + x1) in
+    let lp = luminance(p.r, p.g, p.b) in
+    let lq = luminance(q.r, q.g, q.b) in
+    let lr = luminance(r.r, r.g, r.b) in
+    let ls = luminance(s.r, s.g, s.b) in
+    (1.0 - dx) * (1.0 - dy) * lp +
+    dx          * (1.0 - dy) * lq +
+    (1.0 - dx) * dy          * lr +
+    dx          * dy          * ls
+  })
+}
+
+// -- dHash --
+
+fn dhash_bits(pixels, width, height) {
+  // Resize to 9x8 grayscale
+  let thumb = resize_gray(pixels, width, height, 9, 8) in
+  // For each row, compare adjacent pixels -> 8 bits per row -> 64 bits total
+  list.build(64, fn(i) {
+    let row = i / 8 in
+    let col = i % 8 in
+    let left  = list.get(thumb, row * 9 + col) in
+    let right = list.get(thumb, row * 9 + col + 1) in
+    if left > right then 1 else 0
+  })
+}
+
+// Convert 64 bits to 16 uppercase hex chars (4 bits per hex digit).
+fn bits_to_hex16(bits) {
+  let hex_chars = ["0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"] in
+  list.fold(
+    list.build(16, fn(i) {
+      let b0 = list.get(bits, i * 4) in
+      let b1 = list.get(bits, i * 4 + 1) in
+      let b2 = list.get(bits, i * 4 + 2) in
+      let b3 = list.get(bits, i * 4 + 3) in
+      list.get(hex_chars, b0 * 8 + b1 * 4 + b2 * 2 + b3)
+    }),
+    "",
+    fn(acc, c) { str.concat([acc, c]) }
+  )
+}
+
+fn dhash16(pixels, width, height) {
+  bits_to_hex16(dhash_bits(pixels, width, height))
+}
+
+// Hamming distance between two DHASH16 strings.
+fn hamming(a, b) {
+  let a_chars = str.chars(a) in
+  let b_chars = str.chars(b) in
+  let hex_val = fn(c) {
+    if c == "0" then 0
+    else if c == "1" then 1
+    else if c == "2" then 2
+    else if c == "3" then 3
+    else if c == "4" then 4
+    else if c == "5" then 5
+    else if c == "6" then 6
+    else if c == "7" then 7
+    else if c == "8" then 8
+    else if c == "9" then 9
+    else if c == "A" then 10
+    else if c == "B" then 11
+    else if c == "C" then 12
+    else if c == "D" then 13
+    else if c == "E" then 14
+    else 15
+  } in
+  let popcount = fn(v) {
+    let b0 = v % 2 in
+    let b1 = (v / 2) % 2 in
+    let b2 = (v / 4) % 2 in
+    let b3 = (v / 8) % 2 in
+    b0 + b1 + b2 + b3
+  } in
+  list.fold(
+    list.build(16, fn(i) {
+      let va = hex_val(list.get(a_chars, i)) in
+      let vb = hex_val(list.get(b_chars, i)) in
+      popcount(if va > vb then va - vb else vb - va)
+    }),
+    0,
+    fn(acc, x) { acc + x }
+  )
+}
+
+// -- Histogram sketch --
+
+fn bucket(r, g, b) {
+  let ri = cast.int(r) / 64 in
+  let gi = cast.int(g) / 64 in
+  let bi = cast.int(b) / 64 in
+  ri * 16 + gi * 4 + bi
+}
+
+fn count_tier(count, total) {
+  let pct = cast.float(count) / cast.float(total) in
+  if pct > 0.5 then 3
+  else if pct > 0.25 then 2
+  else if pct > 0.1 then 1
+  else 0
+}
+
+fn hist_sketch(pixels) {
+  let total = list.len(pixels) in
+  // Count pixels in each of 64 buckets
+  let counts = list.fold(pixels, list.build(64, fn(_) { 0 }), fn(acc, p) {
+    let b = bucket(p.r, p.g, p.b) in
+    list.build(64, fn(i) { if i == b then list.get(acc, i) + 1 else list.get(acc, i) })
+  }) in
+  // Find top 4 buckets by count (ties broken by bucket index)
+  let indexed = list.build(64, fn(i) { { idx: i, cnt: list.get(counts, i) } }) in
+  // Manual top-4 selection (list.sort not available in FARD std)
+  let best = fn(counts_indexed, n) {
+    list.fold(list.build(n, fn(_) { null }), { remaining: counts_indexed, chosen: [] }, fn(acc, _) {
+      let best_in = list.fold(acc.remaining, { idx: -1, cnt: -1, pos: -1 }, fn(b, entry) {
+        if entry.cnt > b.cnt then { idx: entry.idx, cnt: entry.cnt, pos: 0 }
+        else if entry.cnt == b.cnt && entry.idx < b.idx then { idx: entry.idx, cnt: entry.cnt, pos: 0 }
+        else b
+      }) in
+      let new_remaining = list.filter(acc.remaining, fn(e) { e.idx != best_in.idx }) in
+      { remaining: new_remaining, chosen: list.append(acc.chosen, best_in) }
+    }).chosen
+  } in
+  let top4 = best(indexed, 4) in
+  // Encode: 4 x (6-bit bucket | 2-bit tier) = 32 bits = 8 hex chars
+  let hex_chars = ["0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"] in
+  list.fold(
+    list.build(8, fn(i) {
+      let slot = i / 2 in
+      let entry = list.get(top4, slot) in
+      let tier = count_tier(entry.cnt, total) in
+      let nibble_val = if i % 2 == 0
+        then entry.idx / 4         // high nibble: upper 4 bits of (6-bit idx | 2-bit tier)
+        else (entry.idx % 4) * 4 + tier  // low nibble: lower 2 bits of idx + 2-bit tier
+      in
+      list.get(hex_chars, nibble_val)
+    }),
+    "",
+    fn(acc, c) { str.concat([acc, c]) }
+  )
+}
+
+// -- PERC-ID --
+
+fn make_perc_id(pixels, width, height) {
+  let n = list.len(pixels) in
+  if n < 9 then null
+  else
+    let dh = dhash16(pixels, width, height) in
+    let hs = hist_sketch(pixels) in
+    str.concat(["PERC-", dh, "-", hs])
+}
+
+{
+  dhash16:      dhash16,
+  hamming:      hamming,
+  hist_sketch:  hist_sketch,
+  make_perc_id: make_perc_id
+}
