@@ -1,0 +1,209 @@
+import("std/list") as list
+import("std/str") as str
+import("std/cast") as cast
+import("std/io") as io
+import("std/cli") as cli
+import("std/fs") as fs
+import("std/hash") as hash
+import("std/bytes") as bytes_mod
+import("std/json") as json
+import("../src/core/image_receipt") as receipt_mod
+import("../src/core/if_id") as ifid
+import("../src/core/image_read") as imgread
+
+// image_chain.fard -- build and verify IF-Protocol edit chains.
+//
+// An edit chain is a sequence of image receipts where each step records
+// the parent_if_id of the previous step. This makes every transformation
+// replayable and verifiable:
+//
+//   original capture -> crop -> resize -> compress -> publish
+//
+// Usage:
+//   image_chain init <image_path> <chain_dir>
+//   image_chain add <chain_dir> <operation> [params_json]
+//   image_chain verify <chain_dir>
+//   image_chain show <chain_dir>
+
+fn detect_format(path) {
+  if str.ends_with(path, ".png") then "png"
+  else if str.ends_with(path, ".jpg") || str.ends_with(path, ".jpeg") then "jpeg"
+  else if str.ends_with(path, ".bmp") then "bmp"
+  else "unknown"
+}
+
+fn read_receipt_from_path(path) {
+  json.decode(fs.read_text(path))
+}
+
+fn receipt_path(chain_dir, step) {
+  str.concat([chain_dir, "/step_", str.from_int(step), ".json"])
+}
+
+fn chain_meta_path(chain_dir) {
+  str.concat([chain_dir, "/chain.json"])
+}
+
+fn load_chain_meta(chain_dir) {
+  json.decode(fs.read_text(chain_meta_path(chain_dir)))
+}
+
+fn save_chain_meta(chain_dir, meta) {
+  fs.write_text(chain_meta_path(chain_dir), json.encode(meta))
+}
+
+// init: create a chain from an original image capture.
+fn init_cmd(args) {
+  if list.len(args) < 3 then
+    io.println("usage: image_chain init <image_path> <chain_dir>")
+  else
+    let path = list.get(args, 1) in
+    let chain_dir = list.get(args, 2) in
+    let _ = fs.make_dir(chain_dir) in
+
+    let raw_bytes = fs.read_bytes(path) in
+    let byte_dig = str.concat(["sha256:", bytes_mod.to_hex(hash.sha256_bytes(raw_bytes))]) in
+    let pixels = imgread.read_image_pixels(path, 16) in
+
+    let fields = {
+      pixels:       pixels,
+      byte_digest:  byte_dig,
+      format:       detect_format(path),
+      width:        0,
+      height:       list.len(pixels),
+      colorspace:   "sRGB",
+      icc_digest:   null,
+      orientation:  1,
+      palette_k:    4,
+      source:       receipt_mod.no_source(),
+      parent_if_id: null,
+      operation:    "original",
+      params:       null
+    } in
+    let receipt = receipt_mod.make_receipt(fields) in
+    let _ = fs.write_text(receipt_path(chain_dir, 0), json.encode(receipt)) in
+    let meta = { steps: 1, head_if_id: receipt.if_id, source_path: path } in
+    let _ = save_chain_meta(chain_dir, meta) in
+
+    let _ = io.println(str.concat(["chain initialised: ", chain_dir])) in
+    let _ = io.println(str.concat(["  step 0 (original): ", receipt.if_id])) in
+    io.println(str.concat(["  pixel_digest: ", receipt.pixel_digest]))
+}
+
+// add: record a new edit step with a given operation and optional params.
+// The new step references the current head as parent_if_id.
+// In a real implementation the image would be re-read after the edit;
+// here we record the operation metadata and accept the edited image path.
+fn add_cmd(args) {
+  if list.len(args) < 3 then
+    io.println("usage: image_chain add <chain_dir> <operation> [edited_image_path]")
+  else
+    let chain_dir = list.get(args, 1) in
+    let operation = list.get(args, 2) in
+    let edited_path = if list.len(args) > 3 then list.get(args, 3) else "" in
+
+    let meta = load_chain_meta(chain_dir) in
+    let parent_step = meta.steps - 1 in
+    let parent_receipt = read_receipt_from_path(receipt_path(chain_dir, parent_step)) in
+
+    // If an edited image path was supplied, read its pixels and byte digest.
+    // Otherwise reuse the parent pixels (records the operation without a new image).
+    let has_image = str.len(edited_path) > 0 in
+    let raw_bytes = if has_image then fs.read_bytes(edited_path) else fs.read_bytes(receipt_path(chain_dir, 0)) in
+    let byte_dig = str.concat(["sha256:", bytes_mod.to_hex(hash.sha256_bytes(raw_bytes))]) in
+    let pixels = if has_image then imgread.read_image_pixels(edited_path, 16)
+                 else imgread.read_image_pixels(receipt_path(chain_dir, 0), 16) in
+
+    let fields = {
+      pixels:       pixels,
+      byte_digest:  byte_dig,
+      format:       if has_image then detect_format(edited_path) else parent_receipt.format,
+      width:        0,
+      height:       list.len(pixels),
+      colorspace:   "sRGB",
+      icc_digest:   null,
+      orientation:  1,
+      palette_k:    4,
+      source:       receipt_mod.no_source(),
+      parent_if_id: parent_receipt.if_id,
+      operation:    operation,
+      params:       null
+    } in
+    let receipt = receipt_mod.make_receipt(fields) in
+    let new_step = meta.steps in
+    let _ = fs.write_text(receipt_path(chain_dir, new_step), json.encode(receipt)) in
+    let new_meta = { steps: new_step + 1, head_if_id: receipt.if_id, source_path: meta.source_path } in
+    let _ = save_chain_meta(chain_dir, new_meta) in
+
+    let _ = io.println(str.concat(["  step ", str.from_int(new_step), " (", operation, "): ", receipt.if_id])) in
+    io.println(str.concat(["  parent: ", parent_receipt.if_id]))
+}
+
+// verify: walk the chain and verify each step's receipt and parent linkage.
+fn verify_cmd(args) {
+  if list.len(args) < 2 then
+    io.println("usage: image_chain verify <chain_dir>")
+  else
+    let chain_dir = list.get(args, 1) in
+    let meta = load_chain_meta(chain_dir) in
+    let n = meta.steps in
+
+    let _ = io.println(str.concat(["verifying chain: ", chain_dir, " (", str.from_int(n), " steps)"])) in
+
+    let results = list.map(list.range(0, n), fn(i) {
+      let r = read_receipt_from_path(receipt_path(chain_dir, i)) in
+      let v = receipt_mod.verify_receipt(r) in
+      { step: i, if_id: r.if_id, operation: r.operation, parent_if_id: r.parent_if_id, valid: v.valid, reason: v.reason }
+    }) in
+
+    // Check parent linkage: each step's parent_if_id must match the previous step's if_id.
+    let _ = list.fold(results, 0, fn(_, res) {
+      let link_ok = if res.step == 0 then res.parent_if_id == null
+                    else
+                      let prev = list.get(results, res.step - 1) in
+                      res.parent_if_id == prev.if_id in
+      let status = if res.valid && link_ok then "VALID" else "INVALID" in
+      io.println(str.concat([
+        "  step ", str.from_int(res.step), " (", res.operation, ")  ", res.if_id, "  ", status
+      ]))
+    }) in
+
+    let n_valid = list.fold(results, 0, fn(acc, r) { if r.valid then acc + 1 else acc }) in
+    io.println(str.concat([str.from_int(n_valid), "/", str.from_int(n), " steps valid"]))
+}
+
+// show: print the chain as a human-readable sequence.
+fn show_cmd(args) {
+  if list.len(args) < 2 then
+    io.println("usage: image_chain show <chain_dir>")
+  else
+    let chain_dir = list.get(args, 1) in
+    let meta = load_chain_meta(chain_dir) in
+    let n = meta.steps in
+    let _ = io.println(str.concat(["chain: ", chain_dir])) in
+    let _ = io.println(str.concat(["head:  ", meta.head_if_id])) in
+    let _ = io.println("") in
+    list.fold(list.range(0, n), 0, fn(_, i) {
+      let r = read_receipt_from_path(receipt_path(chain_dir, i)) in
+      let parent_str = if r.parent_if_id == null then "none" else r.parent_if_id in
+      let _ = io.println(str.concat([
+        "  ", str.from_int(i), ". ", r.operation, "  ->  ", r.if_id
+      ])) in
+      io.println(str.concat(["     parent: ", parent_str]))
+    })
+}
+
+fn main() {
+  let args = cli.args() in
+  if list.len(args) == 0 then
+    io.println("usage: image_chain <init|add|verify|show> ...")
+  else
+    let cmd = list.get(args, 0) in
+    if cmd == "init" then init_cmd(args)
+    else if cmd == "add" then add_cmd(args)
+    else if cmd == "verify" then verify_cmd(args)
+    else if cmd == "show" then show_cmd(args)
+    else io.println(str.concat(["error: unknown command '", cmd, "'"]))
+}
+
+main()

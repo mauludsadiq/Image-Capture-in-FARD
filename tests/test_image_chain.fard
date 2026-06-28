@@ -1,0 +1,67 @@
+import("std/list") as list
+import("std/str") as str
+import("../src/core/image_receipt") as receipt_mod
+import("../src/core/if_id") as ifid
+
+fn rgb(r,g,b) { { r: r, g: g, b: b } }
+
+fn make_receipt(pixels, parent_if_id, operation) {
+  receipt_mod.make_receipt({
+    pixels: pixels,
+    byte_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    format: "png", width: 2, height: 2, colorspace: "sRGB", icc_digest: null,
+    orientation: 1, palette_k: 2, source: receipt_mod.no_source(),
+    parent_if_id: parent_if_id, operation: operation, params: null
+  })
+}
+
+let PIXELS_A = [rgb(1.0,0.0,0.0), rgb(0.0,1.0,0.0), rgb(0.0,0.0,1.0), rgb(1.0,1.0,0.0)]
+let PIXELS_B = [rgb(0.5,0.5,0.5), rgb(0.2,0.2,0.2), rgb(0.8,0.8,0.8), rgb(0.1,0.1,0.1)]
+
+test "original step has null parent_if_id" {
+  let r = make_receipt(PIXELS_A, null, "original") in
+  r.parent_if_id == null
+}
+
+test "derived step records parent_if_id correctly" {
+  let r0 = make_receipt(PIXELS_A, null, "original") in
+  let r1 = make_receipt(PIXELS_A, r0.if_id, "crop") in
+  r1.parent_if_id == r0.if_id
+}
+
+test "chain of three steps has correct parent linkage" {
+  let r0 = make_receipt(PIXELS_A, null, "original") in
+  let r1 = make_receipt(PIXELS_A, r0.if_id, "crop") in
+  let r2 = make_receipt(PIXELS_B, r1.if_id, "compress") in
+  r2.parent_if_id == r1.if_id && r1.parent_if_id == r0.if_id
+}
+
+test "pixel change in derived step changes IF-ID but preserves parent_if_id" {
+  let r0 = make_receipt(PIXELS_A, null, "original") in
+  let r1a = make_receipt(PIXELS_A, r0.if_id, "crop") in
+  let r1b = make_receipt(PIXELS_B, r0.if_id, "crop") in
+  r1a.parent_if_id == r1b.parent_if_id &&
+  r1a.if_id != r1b.if_id
+}
+
+test "all steps in a chain verify as valid" {
+  let r0 = make_receipt(PIXELS_A, null, "original") in
+  let r1 = make_receipt(PIXELS_A, r0.if_id, "crop") in
+  let r2 = make_receipt(PIXELS_B, r1.if_id, "compress") in
+  let steps = [r0, r1, r2] in
+  list.fold(steps, true, fn(acc, r) {
+    acc && receipt_mod.verify_receipt(r).valid
+  })
+}
+
+test "broken chain linkage is detectable" {
+  let r0 = make_receipt(PIXELS_A, null, "original") in
+  let r1 = make_receipt(PIXELS_A, r0.if_id, "crop") in
+  let r2 = make_receipt(PIXELS_B, "IF-000000000000-000000000000", "compress") in
+  r2.parent_if_id != r1.if_id
+}
+
+test "operation field is preserved in receipt" {
+  let r = make_receipt(PIXELS_A, null, "resize") in
+  r.operation == "resize"
+}
