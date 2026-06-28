@@ -72,20 +72,26 @@ fn main() {
     let raw_bytes = fs.read_bytes(path) in
     let byte_dig = str.concat(["sha256:", bytes_mod.to_hex(hash.sha256_bytes(raw_bytes))]) in
 
-    let pixels = imgread.read_image_pixels(path, 16) in
+    let dims = imgread.read_image_dims(path) in
+    let thumb = imgread.read_image_pixels(path, 16) in
+    let full = imgread.read_image_full(path) in
+    let pixels = full.pixels in
     let n = list.len(pixels) in
+    let n_thumb = list.len(thumb) in
 
-    if n == 0 then
+    if n == 0 && n_thumb == 0 then
       io.println("error: could not read image pixels")
     else
+      let use_pixels = if n > 0 then pixels else thumb in
       let format = detect_format(path) in
 
       let fields = {
-        pixels:       pixels,
+        pixels:       use_pixels,
+        thumb_pixels: if n_thumb > 0 then thumb else null,
         byte_digest:  byte_dig,
         format:       format,
-        width:        0,
-        height:       n,
+        width:        dims.width,
+        height:       dims.height,
         colorspace:   "sRGB",
         icc_digest:   null,
         orientation:  1,
@@ -108,7 +114,8 @@ fn main() {
       let _ = io.println(str.concat(["format:        ", receipt.format])) in
       let _ = io.println(str.concat(["colorspace:    ", receipt.colorspace])) in
       let _ = io.println(str.concat(["orientation:   ", str.from_int(receipt.orientation)])) in
-      let _ = io.println(str.concat(["pixels sampled:", str.from_int(n)])) in
+      let _ = io.println(str.concat(["dimensions:    ", str.from_int(dims.width), "x", str.from_int(dims.height)])) in
+      let _ = io.println(str.concat(["pixels (full): ", str.from_int(list.len(use_pixels))])) in
       let _ = io.println("") in
       let _ = io.println(str.concat(["dominant palette (k=", str.from_int(k), "):"])) in
       list.fold(receipt.palette, 1, fn(i, entry) {

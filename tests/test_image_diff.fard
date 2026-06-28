@@ -16,6 +16,7 @@ fn make_receipt(pixels) {
     orientation:  1,
     palette_k:    2,
     source:       receipt_mod.no_source(),
+    thumb_pixels: null,
     parent_if_id: null,
     operation:    "original",
     params:       null
@@ -59,12 +60,14 @@ test "metadata-only change: same pixel_digest, different byte_digest, different 
     pixels: RED, byte_digest: "sha256:aaaa0000000000000000000000000000000000000000000000000000000000aa",
     format: "png", width: 1, height: 4, colorspace: "sRGB", icc_digest: null,
     orientation: 1, palette_k: 2, source: receipt_mod.no_source(),
+    thumb_pixels: null,
     parent_if_id: null, operation: "original", params: null
   }) in
   let rb = receipt_mod.make_receipt({
     pixels: RED, byte_digest: "sha256:bbbb0000000000000000000000000000000000000000000000000000000000bb",
     format: "png", width: 1, height: 4, colorspace: "sRGB", icc_digest: null,
     orientation: 1, palette_k: 2, source: receipt_mod.no_source(),
+    thumb_pixels: null,
     parent_if_id: null, operation: "original", params: null
   }) in
   ra.pixel_digest == rb.pixel_digest &&

@@ -7,6 +7,7 @@ import("../core/if_id") as ifid
 import("../core/vendor/cf_id") as cf
 import("../core/vendor/rgb_lab") as lab
 import("../core/vendor/kmeans") as km
+import("../core/image_read") as imgread_mod
 
 // image_receipt.fard -- build and verify IF-Protocol-1.0.0 image receipts.
 //
@@ -61,7 +62,9 @@ fn receipt_preimage_json(r) {
 // Build a complete image receipt from decoded pixels and metadata.
 //
 // fields:
-//   pixels         list of {r,g,b} floats in [0,1]
+//   pixels         list of {r,g,b} floats -- FULL RESOLUTION for pixel_digest
+//   thumb_pixels   list of {r,g,b} floats -- thumbnail for palette (optional,
+//                  if null, uses pixels for palette too)
 //   byte_digest    sha256:... of the raw file bytes (caller computes)
 //   format         "png" | "jpeg" | "bmp" | "unknown"
 //   width, height  pixel dimensions (after orientation correction)
@@ -76,7 +79,8 @@ fn receipt_preimage_json(r) {
 //   params         operation params record, or null
 fn make_receipt(fields) {
   let pd = ifid.pixel_digest_canonical(fields.pixels) in
-  let palette = build_palette(fields.pixels, fields.palette_k) in
+  let palette_pixels = if fields.thumb_pixels == null then fields.pixels else fields.thumb_pixels in
+  let palette = build_palette(palette_pixels, fields.palette_k) in
 
   let partial = {
     byte_digest:         fields.byte_digest,

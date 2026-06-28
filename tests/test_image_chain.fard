@@ -11,7 +11,7 @@ fn make_receipt(pixels, parent_if_id, operation) {
     byte_digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
     format: "png", width: 2, height: 2, colorspace: "sRGB", icc_digest: null,
     orientation: 1, palette_k: 2, source: receipt_mod.no_source(),
-    parent_if_id: parent_if_id, operation: operation, params: null
+    thumb_pixels: null, parent_if_id: parent_if_id, operation: operation, params: null
   })
 }
 

@@ -23,6 +23,7 @@ fn dummy_fields(pixels) {
     orientation:  1,
     palette_k:    2,
     source:       receipt_mod.no_source(),
+    thumb_pixels: null,
     parent_if_id: null,
     operation:    "original",
     params:       null
@@ -66,6 +67,7 @@ test "metadata-only change produces same pixel_digest but different receipt_dige
     orientation:  f1.orientation,
     palette_k:    f1.palette_k,
     source:       f1.source,
+    thumb_pixels: null,
     parent_if_id: f1.parent_if_id,
     operation:    f1.operation,
     params:       f1.params

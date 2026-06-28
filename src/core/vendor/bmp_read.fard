@@ -77,9 +77,32 @@ fn read_bmp(path) {
   })
 }
 
+fn read_bmp_with_dims(path) {
+  let data      = fs.read_bytes(path) in
+  let width     = read_i32_le(data, 18) in
+  let height    = read_i32_le(data, 22) in
+  let flip      = height < 0 in
+  let h         = if flip then 0 - height else height in
+  let w         = if width < 0 then 0 - width else width in
+  let px_offset = read_u32_le(data, 10) in
+  let stride    = (w * 3 + 3) / 4 * 4 in
+  let pixels = list.build(w * h, fn(i) {
+    let col = i % w in
+    let row = i / w in
+    let actual_row = if flip then row else h - 1 - row in
+    let pos = px_offset + actual_row * stride + col * 3 in
+    let b = cast.float(bytes.get(data, pos))       / 255.0 in
+    let g = cast.float(bytes.get(data, pos + 1))   / 255.0 in
+    let r = cast.float(bytes.get(data, pos + 2))   / 255.0 in
+    t.rgb_f(r, g, b)
+  }) in
+  { pixels: pixels, width: w, height: h }
+}
+
 {
-  read_bmp:     read_bmp,
-  read_u8:      read_u8,
-  read_u32_le:  read_u32_le,
-  read_i32_le:  read_i32_le
+  read_bmp:            read_bmp,
+  read_bmp_with_dims:  read_bmp_with_dims,
+  read_u8:             read_u8,
+  read_u32_le:         read_u32_le,
+  read_i32_le:         read_i32_le
 }

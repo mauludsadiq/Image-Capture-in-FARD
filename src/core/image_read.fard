@@ -1,27 +1,68 @@
 import("std/process") as process
 import("std/str") as str
 import("std/list") as list
+import("std/cast") as cast
 import("../core/vendor/bmp_read") as bmp
 
-// Read pixels from any image file sips supports
-// Uses sips to resize + convert to BMP, then native FARD BMP parser
-// thumb_side: resize longest edge to this before sampling (e.g. 64)
-// Returns list of rgb_f records
+// Read pixels from any image file sips supports.
+// Uses sips to convert to BMP, then native FARD BMP parser.
 
+// read_image_pixels: thumbnail version for palette extraction.
+// thumb_side: resize longest edge to this before sampling (e.g. 16, 64).
+// Returns list of {r,g,b} float records.
 fn read_image_pixels(path, thumb_side) {
   let side_s   = str.from_int(thumb_side) in
   let bmp_path = "out/image_read_thumb.bmp" in
-
   let step1 = process.capture("sips", [
     "--resampleHeightWidthMax", side_s,
     "--setProperty", "format", "bmp",
     path, "--out", bmp_path
   ]) in
-
   if !step1.ok then [] else
   bmp.read_bmp(bmp_path)
 }
 
+// read_image_full: full-resolution version for pixel_digest computation.
+// Converts to BMP at native resolution (no resampling).
+// Returns {pixels, width, height} record.
+// WARNING: for large images (e.g. 4032x3024 = 12M pixels) this will be
+// slow in FARD -- suitable for forensic identity, not real-time use.
+// For production use, Phase B language ports (Swift/Kotlin/Go) should
+// compute pixel_digest natively before calling into FARD.
+fn read_image_full(path) {
+  let bmp_path = "out/image_read_full.bmp" in
+  let step1 = process.capture("sips", [
+    "--setProperty", "format", "bmp",
+    path, "--out", bmp_path
+  ]) in
+  if !step1.ok then { pixels: [], width: 0, height: 0 } else
+  let result = bmp.read_bmp_with_dims(bmp_path) in
+  result
+}
+
+// read_image_dims: fast dimension query via sips -g, no pixel decoding.
+// Returns {width, height} or {width:0, height:0} on failure.
+fn read_image_dims(path) {
+  let step = process.capture("sips", ["-g", "pixelWidth", "-g", "pixelHeight", path]) in
+  if !step.ok then { width: 0, height: 0 }
+  else
+    let lines = str.split(step.stdout, "\n") in
+    let w_line = list.fold(lines, "", fn(acc, l) {
+      if str.contains(l, "pixelWidth") then l else acc
+    }) in
+    let h_line = list.fold(lines, "", fn(acc, l) {
+      if str.contains(l, "pixelHeight") then l else acc
+    }) in
+    let parse_val = fn(line) {
+      let parts = str.split(str.trim(line), " ") in
+      if list.len(parts) < 2 then 0
+      else cast.int(list.get(parts, list.len(parts) - 1))
+    } in
+    { width: parse_val(w_line), height: parse_val(h_line) }
+}
+
 {
-  read_image_pixels: read_image_pixels
+  read_image_pixels:      read_image_pixels,
+  read_image_full:        read_image_full,
+  read_image_dims:        read_image_dims
 }
