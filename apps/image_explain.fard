@@ -75,15 +75,15 @@ fn main() {
 
     let dims = imgread.read_image_dims(path) in
     let thumb = imgread.read_image_pixels(path, 16) in
-    let full = imgread.read_image_full(path) in
-    let pixels = full.pixels in
+    let full = imgread.read_image_pixels(path, 128) in
+    let pixels = full in
     let n = list.len(pixels) in
     let n_thumb = list.len(thumb) in
 
     if n == 0 && n_thumb == 0 then
       io.println("error: could not read image pixels")
     else
-      let use_pixels = if n > 0 then pixels else thumb in
+      let use_pixels = if n > 0 then pixels else thumb in  // 128px thumbnail for pixel_digest (Phase D pragmatic cap)
       let format = detect_format(path) in
 
       let claims = exif.extract_exif_claims(path) in

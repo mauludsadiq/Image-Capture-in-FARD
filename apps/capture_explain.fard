@@ -1,0 +1,102 @@
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("std/cli") as cli
+import("../src/core/image_read") as imgread
+import("../src/core/image_receipt") as receipt_mod
+import("../src/core/exif_claims") as exif
+import("../src/core/perc_id") as perc
+
+// capture_explain.fard -- identity + PERC-ID for a captured image.
+// Usage:
+//   fardrun run --program apps/capture_explain.fard --out <out> -- <image> [k]
+//   fardrun run --program apps/capture_explain.fard --out <out> -- <image_a> <image_b> [k]
+
+let args = cli.args() in
+let n = list.len(args) in
+
+if n < 1 then
+  io.println("usage: capture_explain <image> [k]  OR  capture_explain <image_a> <image_b> [k]")
+else
+
+let path_a = list.get(args, 0) in
+let two_images = n >= 3 in
+let path_b = if two_images then list.get(args, 1) else null in
+let k_str  = if two_images && n >= 3 then list.get(args, 2)
+             else if !two_images && n >= 2 then list.get(args, 1)
+             else "4" in
+let k = if k_str == "3" then 3
+        else if k_str == "5" then 5
+        else if k_str == "6" then 6
+        else 4 in
+
+let explain_one = fn(path) {
+  let _ = io.println(str.concat(["image:         ", path])) in
+  let thumb  = imgread.read_image_pixels(path, 16) in
+  let pixels = imgread.read_image_pixels(path, 128) in
+  let dims   = imgread.read_image_dims(path) in
+  let np     = list.len(pixels) in
+  let nt     = list.len(thumb) in
+  let use_px = if np > 0 then pixels else thumb in
+  let claims = exif.extract_exif_claims(path) in
+  let source = exif.claims_to_source(claims) in
+  let cs     = if claims.colorspace_claim == null then "sRGB" else claims.colorspace_claim in
+  let fields = {
+    pixels:       use_px,
+    thumb_pixels: if nt > 0 then thumb else null,
+    byte_digest:  "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    format:       if claims.format_claim == null then "unknown" else claims.format_claim,
+    width:        dims.width,
+    height:       dims.height,
+    colorspace:   cs,
+    icc_digest:   null,
+    orientation:  1,
+    palette_k:    k,
+    source:       source,
+    parent_if_id: null,
+    operation:    "original",
+    params:       null
+  } in
+  let r      = receipt_mod.make_receipt(fields) in
+  let dh     = perc.dhash16(use_px, 128, 72) in
+  let hs     = perc.hist_sketch(use_px) in
+  let perc_id = str.concat(["PERC-", dh, "-", hs]) in
+  let _ = io.println(str.concat(["IF-ID:         ", r.if_id])) in
+  let _ = io.println(str.concat(["PERC-ID:       ", perc_id])) in
+  let _ = io.println(str.concat(["  dHash:       ", dh])) in
+  let _ = io.println(str.concat(["  hist:        ", hs])) in
+  let _ = io.println(str.concat(["pixel_digest:  ", r.pixel_digest])) in
+  let _ = io.println(str.concat(["dimensions:    ", str.from_int(dims.width), "x", str.from_int(dims.height)])) in
+  let _ = io.println(str.concat(["format:        ", r.format])) in
+  let _ = io.println("") in
+  let _ = io.println("source claims (EXIF -- unverified):") in
+  let _ = io.println(str.concat(["  device:    ", if claims.device_claim == null then "null" else claims.device_claim])) in
+  let _ = io.println(str.concat(["  timestamp: ", if claims.timestamp == null then "null" else claims.timestamp])) in
+  let _ = io.println(str.concat(["  dpi:       ", if claims.dpi == null then "null" else claims.dpi])) in
+  let _ = io.println("") in
+  let _ = io.println(str.concat(["dominant palette (k=", str.from_int(k), "):"])) in
+  let _ = list.fold(r.palette, 1, fn(i, entry) {
+    let _ = io.println(str.concat(["  ", str.from_int(i), ". ", entry.hex, "  ", entry.cf_id])) in
+    i + 1
+  }) in
+  { receipt: r, dhash: dh }
+} in
+
+let result_a = explain_one(path_a) in
+
+if path_b != null then
+  let _ = io.println("") in
+  let _ = io.println("---") in
+  let _ = io.println("") in
+  let result_b = explain_one(path_b) in
+  let h = perc.hamming(result_a.dhash, result_b.dhash) in
+  let _ = io.println("") in
+  let _ = io.println("perceptual similarity:") in
+  let _ = io.println(str.concat(["  hamming:  ", str.from_int(h)])) in
+  let _ = io.println(str.concat(["  verdict:  ",
+    if h == 0 then "IDENTICAL (perceptual)"
+    else if h <= 5 then "NEAR-DUPLICATE"
+    else if h <= 10 then "POSSIBLY RELATED"
+    else "DIFFERENT"])) in
+  null
+else null
