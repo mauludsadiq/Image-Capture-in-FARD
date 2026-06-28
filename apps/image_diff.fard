@@ -1,0 +1,143 @@
+import("std/list") as list
+import("std/str") as str
+import("std/cast") as cast
+import("std/io") as io
+import("std/cli") as cli
+import("std/fs") as fs
+import("std/hash") as hash
+import("std/bytes") as bytes_mod
+import("../src/core/image_receipt") as receipt_mod
+import("../src/core/image_read") as imgread
+import("../src/core/vendor/wcag") as wcag
+
+// image_diff.fard -- compare two images across all four IF-Protocol identities.
+//
+// Usage: image_diff <image_a> <image_b>
+//
+// Reports:
+//   byte changed?      -- different file bytes?
+//   pixel changed?     -- different decoded pixels?
+//   IF-ID changed?     -- different composite identity?
+//   palette changed?   -- dominant colours changed?
+//   what changed?      -- diagnosis (metadata only / pixels / both)
+
+fn detect_format(path) {
+  if str.ends_with(path, ".png") then "png"
+  else if str.ends_with(path, ".jpg") || str.ends_with(path, ".jpeg") then "jpeg"
+  else if str.ends_with(path, ".bmp") then "bmp"
+  else "unknown"
+}
+
+fn hex_digit_val(c) {
+  if c == "0" then 0 else if c == "1" then 1 else if c == "2" then 2
+  else if c == "3" then 3 else if c == "4" then 4 else if c == "5" then 5
+  else if c == "6" then 6 else if c == "7" then 7 else if c == "8" then 8
+  else if c == "9" then 9
+  else if c == "a" || c == "A" then 10
+  else if c == "b" || c == "B" then 11
+  else if c == "c" || c == "C" then 12
+  else if c == "d" || c == "D" then 13
+  else if c == "e" || c == "E" then 14
+  else 15
+}
+
+fn hex2_to_int(s) {
+  hex_digit_val(str.slice(s, 0, 1)) * 16 + hex_digit_val(str.slice(s, 1, 2))
+}
+
+fn hex_to_rgb(hex_str) {
+  let h = if str.starts_with(hex_str, "#") then str.slice(hex_str, 1, str.len(hex_str)) else hex_str in
+  {
+    r: cast.float(hex2_to_int(str.slice(h, 0, 2))) / 255.0,
+    g: cast.float(hex2_to_int(str.slice(h, 2, 4))) / 255.0,
+    b: cast.float(hex2_to_int(str.slice(h, 4, 6))) / 255.0
+  }
+}
+
+fn read_image(path, k) {
+  let raw_bytes = fs.read_bytes(path) in
+  let byte_dig = str.concat(["sha256:", bytes_mod.to_hex(hash.sha256_bytes(raw_bytes))]) in
+  let pixels = imgread.read_image_pixels(path, 16) in
+  let fields = {
+    pixels:       pixels,
+    byte_digest:  byte_dig,
+    format:       detect_format(path),
+    width:        0,
+    height:       list.len(pixels),
+    colorspace:   "sRGB",
+    icc_digest:   null,
+    orientation:  1,
+    palette_k:    k,
+    source:       receipt_mod.no_source(),
+    parent_if_id: null,
+    operation:    "original",
+    params:       null
+  } in
+  receipt_mod.make_receipt(fields)
+}
+
+fn yn(b) { if b then "YES" else "no" }
+
+fn palette_cf_ids(palette) {
+  list.map(palette, fn(e) { e.cf_id })
+}
+
+fn palettes_differ(pa, pb) {
+  let ids_a = palette_cf_ids(pa) in
+  let ids_b = palette_cf_ids(pb) in
+  if list.len(ids_a) != list.len(ids_b) then true
+  else list.fold(list.range(0, list.len(ids_a)), false, fn(acc, i) {
+    acc || list.get(ids_a, i) != list.get(ids_b, i)
+  })
+}
+
+fn main() {
+  let args = cli.args() in
+  if list.len(args) < 2 then
+    io.println("usage: image_diff <image_a> <image_b>")
+  else
+    let path_a = list.get(args, 0) in
+    let path_b = list.get(args, 1) in
+    let k = if list.len(args) > 2 then cast.int(list.get(args, 2)) else 4 in
+
+    let _ = io.println(str.concat(["A: ", path_a])) in
+    let _ = io.println(str.concat(["B: ", path_b])) in
+    let _ = io.println("") in
+
+    let ra = read_image(path_a, k) in
+    let rb = read_image(path_b, k) in
+
+    let bytes_changed  = ra.byte_digest  != rb.byte_digest in
+    let pixels_changed = ra.pixel_digest != rb.pixel_digest in
+    let if_id_changed  = ra.if_id        != rb.if_id in
+    let palette_changed = palettes_differ(ra.palette, rb.palette) in
+
+    let _ = io.println(str.concat(["byte changed?    ", yn(bytes_changed)])) in
+    let _ = io.println(str.concat(["pixel changed?   ", yn(pixels_changed)])) in
+    let _ = io.println(str.concat(["IF-ID changed?   ", yn(if_id_changed)])) in
+    let _ = io.println(str.concat(["palette changed? ", yn(palette_changed)])) in
+    let _ = io.println("") in
+
+    let diagnosis =
+      if !bytes_changed && !pixels_changed then
+        "IDENTICAL -- same bytes, same pixels, same IF-ID"
+      else if bytes_changed && !pixels_changed then
+        "METADATA ONLY -- bytes differ but pixels are identical (e.g. recompression, EXIF edit)"
+      else if pixels_changed && !palette_changed then
+        "PIXELS CHANGED -- but dominant palette is visually similar"
+      else if pixels_changed && palette_changed then
+        "PIXELS AND PALETTE CHANGED -- visually distinct images"
+      else
+        "UNKNOWN CHANGE PATTERN"
+    in
+
+    let _ = io.println(str.concat(["diagnosis: ", diagnosis])) in
+    let _ = io.println("") in
+    let _ = io.println(str.concat(["A IF-ID: ", ra.if_id])) in
+    let _ = io.println(str.concat(["B IF-ID: ", rb.if_id])) in
+    let _ = io.println(str.concat(["A pixel: ", ra.pixel_digest])) in
+    let _ = io.println(str.concat(["B pixel: ", rb.pixel_digest])) in
+    0
+}
+
+main()

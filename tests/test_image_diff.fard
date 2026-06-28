@@ -1,0 +1,85 @@
+import("std/list") as list
+import("std/str") as str
+import("../src/core/image_receipt") as receipt_mod
+
+fn rgb(r,g,b) { { r: r, g: g, b: b } }
+
+fn make_receipt(pixels) {
+  receipt_mod.make_receipt({
+    pixels:       pixels,
+    byte_digest:  "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    format:       "png",
+    width:        1,
+    height:       list.len(pixels),
+    colorspace:   "sRGB",
+    icc_digest:   null,
+    orientation:  1,
+    palette_k:    2,
+    source:       receipt_mod.no_source(),
+    parent_if_id: null,
+    operation:    "original",
+    params:       null
+  })
+}
+
+fn palettes_differ(pa, pb) {
+  let ids_a = list.map(pa, fn(e) { e.cf_id }) in
+  let ids_b = list.map(pb, fn(e) { e.cf_id }) in
+  if list.len(ids_a) != list.len(ids_b) then true
+  else list.fold(list.range(0, list.len(ids_a)), false, fn(acc, i) {
+    acc || list.get(ids_a, i) != list.get(ids_b, i)
+  })
+}
+
+let RED   = [rgb(1.0,0.0,0.0), rgb(1.0,0.0,0.0), rgb(1.0,0.0,0.0), rgb(1.0,0.0,0.0)]
+let BLUE  = [rgb(0.0,0.0,1.0), rgb(0.0,0.0,1.0), rgb(0.0,0.0,1.0), rgb(0.0,0.0,1.0)]
+
+test "identical images: same byte, pixel, IF-ID" {
+  let ra = make_receipt(RED) in
+  let rb = make_receipt(RED) in
+  ra.byte_digest == rb.byte_digest &&
+  ra.pixel_digest == rb.pixel_digest &&
+  ra.if_id == rb.if_id
+}
+
+test "different pixels: pixel_digest differs" {
+  let ra = make_receipt(RED) in
+  let rb = make_receipt(BLUE) in
+  ra.pixel_digest != rb.pixel_digest
+}
+
+test "different pixels: IF-ID differs" {
+  let ra = make_receipt(RED) in
+  let rb = make_receipt(BLUE) in
+  ra.if_id != rb.if_id
+}
+
+test "metadata-only change: same pixel_digest, different byte_digest, different IF-ID" {
+  let ra = receipt_mod.make_receipt({
+    pixels: RED, byte_digest: "sha256:aaaa0000000000000000000000000000000000000000000000000000000000aa",
+    format: "png", width: 1, height: 4, colorspace: "sRGB", icc_digest: null,
+    orientation: 1, palette_k: 2, source: receipt_mod.no_source(),
+    parent_if_id: null, operation: "original", params: null
+  }) in
+  let rb = receipt_mod.make_receipt({
+    pixels: RED, byte_digest: "sha256:bbbb0000000000000000000000000000000000000000000000000000000000bb",
+    format: "png", width: 1, height: 4, colorspace: "sRGB", icc_digest: null,
+    orientation: 1, palette_k: 2, source: receipt_mod.no_source(),
+    parent_if_id: null, operation: "original", params: null
+  }) in
+  ra.pixel_digest == rb.pixel_digest &&
+  ra.byte_digest != rb.byte_digest &&
+  ra.if_id != rb.if_id
+}
+
+test "palette diff detects different dominant colours" {
+  let ra = make_receipt(RED) in
+  let rb = make_receipt(BLUE) in
+  palettes_differ(ra.palette, rb.palette)
+}
+
+test "palette diff returns false for identical images" {
+  let ra = make_receipt(RED) in
+  let rb = make_receipt(RED) in
+  !palettes_differ(ra.palette, rb.palette)
+}
