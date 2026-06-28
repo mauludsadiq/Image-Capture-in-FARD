@@ -1,0 +1,11 @@
+{
+  "": {
+    "swift-dependencies": "/Users/g.bogans/Downloads/Image Capture in FARD/cfid_swift_if/.build/arm64-apple-macosx/debug/IFReceiptTests.build/master.swiftdeps"
+  },
+  "/Users/g.bogans/Downloads/Image Capture in FARD/cfid_swift_if/Tests/IFReceiptTests/IFReceiptTests.swift": {
+    "dependencies": "/Users/g.bogans/Downloads/Image Capture in FARD/cfid_swift_if/.build/arm64-apple-macosx/debug/IFReceiptTests.build/IFReceiptTests.d",
+    "object": "/Users/g.bogans/Downloads/Image Capture in FARD/cfid_swift_if/.build/arm64-apple-macosx/debug/IFReceiptTests.build/IFReceiptTests.swift.o",
+    "swiftmodule": "/Users/g.bogans/Downloads/Image Capture in FARD/cfid_swift_if/.build/arm64-apple-macosx/debug/IFReceiptTests.build/IFReceiptTests~partial.swiftmodule",
+    "swift-dependencies": "/Users/g.bogans/Downloads/Image Capture in FARD/cfid_swift_if/.build/arm64-apple-macosx/debug/IFReceiptTests.build/IFReceiptTests.swiftdeps"
+  }
+}
