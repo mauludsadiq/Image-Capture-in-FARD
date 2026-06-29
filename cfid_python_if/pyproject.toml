@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "ifreceipt"
+version = "1.0.0"
+description = "IF-Protocol-1.0.0 and PERC-1.0 image identity in Python"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+keywords = ["image", "identity", "provenance", "perceptual-hash", "tamper-detection"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Multimedia :: Graphics",
+]
+
+[project.urls]
+Repository = "https://github.com/mauludsadiq/Image-Capture-in-FARD"
+
+[tool.setuptools.packages.find]
+where = ["src"]
