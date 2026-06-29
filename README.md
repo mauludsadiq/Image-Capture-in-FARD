@@ -62,6 +62,7 @@ Together they answer two different questions:
     cfid_kotlin_if/        -- Kotlin port (Phase B.2), 9 tests
     cfid_go_if/            -- Go port (Phase B.3), 9 tests
     cfid_ts_if/            -- TypeScript port (Phase B.4), 9 tests
+    cfid_python_if/        -- Python port (Phase B.5), 22 tests
 
     conformance/
       if_vectors.json      -- canonical pixel_digest + hash12 vectors
@@ -115,6 +116,9 @@ Live capture session (tamper-evident frame chain):
     # TypeScript port
     cd cfid_ts_if && npm install && npx tsc && node --test test/index.test.mjs
 
+    # Python port
+    cd cfid_python_if && python3 -m pytest tests/ -v
+
 ## Conformance
 
 All five implementations agree on the canonical pixel_digest vector
@@ -155,5 +159,5 @@ Conclusions:
 ## Stats
 
 - 3,148 lines of FARD
-- 58 FARD tests, 36 language port tests, 94 total, 0 failures
-- 5 implementations (FARD + Swift + Kotlin + Go + TypeScript)
+- 58 FARD tests, 58 language port tests, 116 total, 0 failures
+- 6 implementations (FARD + Swift + Kotlin + Go + TypeScript + Python)
