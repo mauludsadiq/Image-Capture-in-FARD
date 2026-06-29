@@ -132,7 +132,7 @@ See `conformance/if_vectors.json` for the full conformance suite.
 
 ## Stats
 
-- 2,661 lines of FARD
+- 2,944 lines of FARD
 - 58 FARD tests, 36 language port tests
 - 94 total tests, 0 failures
 - 5 implementations (FARD + Swift + Kotlin + Go + TypeScript)
