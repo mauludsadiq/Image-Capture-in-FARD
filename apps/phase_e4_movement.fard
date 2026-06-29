@@ -1,0 +1,66 @@
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("../src/core/image_read") as imgread
+import("../src/core/perc_id") as perc
+
+let frames = [
+  { label: "still",       path: "out/captures/phase_e4_still_small.jpg" },
+  { label: "slight_turn", path: "out/captures/phase_e4_slight_turn_small.jpg" },
+  { label: "medium_turn", path: "out/captures/phase_e4_medium_turn_small.jpg" },
+  { label: "look_away",   path: "out/captures/phase_e4_look_away_small.jpg" }
+] in
+
+let _ = io.println("==> Phase E.4: Movement inflection test") in
+let _ = io.println("    still -> slight_turn -> medium_turn -> look_away") in
+let _ = io.println("") in
+
+let hashes = list.map(frames, fn(f) {
+  let pixels = imgread.read_image_pixels(f.path, 128) in
+  let dh = perc.dhash16(pixels, 128, 72) in
+  let hs = perc.hist_sketch(pixels) in
+  let _ = io.println(str.concat(["  ", f.label])) in
+  let _ = io.println(str.concat(["    dHash: ", dh, "  hist: ", hs])) in
+  { label: f.label, dhash: dh, hist: hs }
+}) in
+
+let ref = list.get(hashes, 0) in
+let _ = io.println("") in
+let _ = io.println("==> Hamming vs still (reference):") in
+let _ = list.fold(hashes, 0, fn(i, h) {
+  if i == 0 then i + 1
+  else
+    let ham = perc.hamming(ref.dhash, h.dhash) in
+    let verdict = if ham == 0 then "IDENTICAL"
+                  else if ham <= 5 then "NEAR-DUPLICATE"
+                  else if ham <= 10 then "POSSIBLY RELATED"
+                  else "DIFFERENT" in
+    let _ = io.println(str.concat([
+      "  still vs ", h.label, ": Hamming=", str.from_int(ham), "  ", verdict
+    ])) in
+    i + 1
+}) in
+
+let _ = io.println("") in
+let _ = io.println("==> Consecutive Hamming (step by step):") in
+let _ = list.fold(hashes, 0, fn(i, h) {
+  if i == 0 then i + 1
+  else
+    let prev = list.get(hashes, i - 1) in
+    let ham = perc.hamming(prev.dhash, h.dhash) in
+    let verdict = if ham <= 5 then "NEAR-DUPLICATE"
+                  else if ham <= 10 then "POSSIBLY RELATED"
+                  else "DIFFERENT" in
+    let _ = io.println(str.concat([
+      "  ", prev.label, " -> ", h.label, ": Hamming=", str.from_int(ham), "  ", verdict
+    ])) in
+    i + 1
+}) in
+
+let _ = io.println("") in
+let _ = io.println("==> Histogram sketches:") in
+let _ = list.fold(hashes, 0, fn(i, h) {
+  let _ = io.println(str.concat(["  ", h.label, ": ", h.hist])) in
+  i + 1
+}) in
+null
