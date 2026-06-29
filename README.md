@@ -26,6 +26,7 @@ Together they answer two different questions:
 - SPEC-PERC-1.0.md -- PERC-1.0: dHash, histogram sketch, PERC-ID
 - conformance/if_vectors.json -- canonical cross-language test vectors
 - conformance/CONFORMANCE.md  -- conformance guide
+- C2PA_COMPARISON.md          -- how IF-Protocol relates to C2PA/Content Credentials
 
 ## Repository structure
 
