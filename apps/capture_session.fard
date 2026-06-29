@@ -1,0 +1,204 @@
+import("std/list") as list
+import("std/str") as str
+import("std/io") as io
+import("std/cli") as cli
+import("std/fs") as fs
+import("std/json") as json
+import("../src/core/image_read") as imgread
+import("../src/core/image_receipt") as receipt_mod
+import("../src/core/exif_claims") as exif
+import("../src/core/perc_id") as perc
+
+// capture_session.fard -- live capture session with tamper-evident frame chain.
+//
+// A session is a sequence of frames where each frame receipt references
+// the previous frame IF-ID as parent_if_id, and records the PERC-ID
+// and Hamming distance to the previous frame.
+//
+// Usage:
+//   capture_session start <session_dir> <image_path>
+//   capture_session add   <session_dir> <image_path>
+//   capture_session show  <session_dir>
+//   capture_session verify <session_dir>
+
+fn detect_format(path) {
+  if str.ends_with(path, ".png") then "png"
+  else if str.ends_with(path, ".jpg") || str.ends_with(path, ".jpeg") then "jpeg"
+  else "unknown"
+}
+
+fn make_frame_receipt(path, parent_if_id, k) {
+  let thumb   = imgread.read_image_pixels(path, 16) in
+  let pixels  = imgread.read_image_pixels(path, 128) in
+  let dims    = imgread.read_image_dims(path) in
+  let np      = list.len(pixels) in
+  let nt      = list.len(thumb) in
+  let use_px  = if np > 0 then pixels else thumb in
+  let claims  = exif.extract_exif_claims(path) in
+  let source  = exif.claims_to_source(claims) in
+  let cs      = if claims.colorspace_claim == null then "sRGB" else claims.colorspace_claim in
+  let fields  = {
+    pixels:       use_px,
+    thumb_pixels: if nt > 0 then thumb else null,
+    byte_digest:  "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    format:       detect_format(path),
+    width:        dims.width,
+    height:       dims.height,
+    colorspace:   cs,
+    icc_digest:   null,
+    orientation:  1,
+    palette_k:    k,
+    source:       source,
+    parent_if_id: parent_if_id,
+    operation:    if parent_if_id == null then "capture_session_start" else "capture_session_add",
+    params:       null
+  } in
+  let r  = receipt_mod.make_receipt(fields) in
+  let dh = perc.dhash16(use_px, 128, 72) in
+  let hs = perc.hist_sketch(use_px) in
+  let perc_id = str.concat(["PERC-", dh, "-", hs]) in
+  { receipt: r, dhash: dh, perc_id: perc_id }
+}
+
+fn session_meta_path(session_dir) {
+  str.concat([session_dir, "/session.json"])
+}
+
+fn frame_path(session_dir, n) {
+  str.concat([session_dir, "/frame_", str.from_int(n), ".json"])
+}
+
+fn read_meta(session_dir) {
+  json.decode(fs.read_text(session_meta_path(session_dir)))
+}
+
+fn write_meta(session_dir, meta) {
+  fs.write_text(session_meta_path(session_dir), json.encode(meta))
+}
+
+fn cmd_start(session_dir, image_path) {
+  let _ = fs.make_dir(session_dir) in
+  let result = make_frame_receipt(image_path, null, 4) in
+  let r = result.receipt in
+  let frame = {
+    frame_n:      0,
+    image_path:   image_path,
+    if_id:        r.if_id,
+    pixel_digest: r.pixel_digest,
+    perc_id:      result.perc_id,
+    dhash:        result.dhash,
+    hamming_prev: null,
+    parent_if_id: null,
+    operation:    r.operation
+  } in
+  let meta = {
+    session_id:  r.if_id,
+    frame_count: 1,
+    last_if_id:  r.if_id,
+    last_dhash:  result.dhash
+  } in
+  let _ = fs.write_text(frame_path(session_dir, 0), json.encode(frame)) in
+  let _ = write_meta(session_dir, meta) in
+  let _ = io.println(str.concat(["session started: ", session_dir])) in
+  let _ = io.println(str.concat(["session_id:   ", r.if_id])) in
+  let _ = io.println(str.concat(["frame 0 IF-ID: ", r.if_id])) in
+  let _ = io.println(str.concat(["frame 0 PERC-ID: ", result.perc_id])) in
+  null
+}
+
+fn cmd_add(session_dir, image_path) {
+  let meta   = read_meta(session_dir) in
+  let n      = meta.frame_count in
+  let result = make_frame_receipt(image_path, meta.last_if_id, 4) in
+  let r      = result.receipt in
+  let ham    = perc.hamming(meta.last_dhash, result.dhash) in
+  let verdict = if ham == 0 then "IDENTICAL"
+                else if ham <= 5 then "NEAR-DUPLICATE"
+                else if ham <= 10 then "POSSIBLY RELATED"
+                else "DIFFERENT" in
+  let frame = {
+    frame_n:      n,
+    image_path:   image_path,
+    if_id:        r.if_id,
+    pixel_digest: r.pixel_digest,
+    perc_id:      result.perc_id,
+    dhash:        result.dhash,
+    hamming_prev: ham,
+    parent_if_id: meta.last_if_id,
+    operation:    r.operation
+  } in
+  let new_meta = {
+    session_id:  meta.session_id,
+    frame_count: n + 1,
+    last_if_id:  r.if_id,
+    last_dhash:  result.dhash
+  } in
+  let _ = fs.write_text(frame_path(session_dir, n), json.encode(frame)) in
+  let _ = write_meta(session_dir, new_meta) in
+  let _ = io.println(str.concat(["frame ", str.from_int(n), " added"])) in
+  let _ = io.println(str.concat(["  IF-ID:        ", r.if_id])) in
+  let _ = io.println(str.concat(["  PERC-ID:      ", result.perc_id])) in
+  let _ = io.println(str.concat(["  hamming_prev: ", str.from_int(ham), "  ", verdict])) in
+  let _ = io.println(str.concat(["  parent_if_id: ", meta.last_if_id])) in
+  null
+}
+
+fn cmd_show(session_dir) {
+  let meta = read_meta(session_dir) in
+  let _ = io.println(str.concat(["session_id:  ", meta.session_id])) in
+  let _ = io.println(str.concat(["frames:      ", str.from_int(meta.frame_count)])) in
+  let _ = io.println("") in
+  list.fold(list.build(meta.frame_count, fn(i) { i }), 0, fn(_, i) {
+    let f = json.decode(fs.read_text(frame_path(session_dir, i))) in
+    let ham_str = if f.hamming_prev == null then "n/a (start)"
+                  else str.from_int(f.hamming_prev) in
+    let _ = io.println(str.concat(["frame ", str.from_int(i), ":"])) in
+    let _ = io.println(str.concat(["  IF-ID:        ", f.if_id])) in
+    let _ = io.println(str.concat(["  PERC-ID:      ", f.perc_id])) in
+    let _ = io.println(str.concat(["  hamming_prev: ", ham_str])) in
+    let _ = io.println(str.concat(["  image:        ", f.image_path])) in
+    let _ = io.println("") in
+    i + 1
+  })
+}
+
+fn cmd_verify(session_dir) {
+  let meta = read_meta(session_dir) in
+  let _ = io.println(str.concat(["verifying session: ", meta.session_id])) in
+  let _ = io.println(str.concat(["frames: ", str.from_int(meta.frame_count)])) in
+  let _ = io.println("") in
+  let ok = list.fold(list.build(meta.frame_count, fn(i) { i }), true, fn(all_ok, i) {
+    let f = json.decode(fs.read_text(frame_path(session_dir, i))) in
+    let result = make_frame_receipt(f.image_path, f.parent_if_id, 4) in
+    let r = result.receipt in
+    let if_ok = r.if_id == f.if_id in
+    let _ = io.println(str.concat([
+      "frame ", str.from_int(i), ": ", if if_ok then "OK" else "FAIL -- IF-ID mismatch"
+    ])) in
+    all_ok && if_ok
+  }) in
+  let _ = io.println("") in
+  let _ = io.println(str.concat(["result: ", if ok then "VALID" else "INVALID"])) in
+  null
+}
+
+let args = cli.args() in
+let n = list.len(args) in
+
+if n < 2 then
+  io.println("usage: capture_session <start|add|show|verify> <session_dir> [image_path]")
+else
+  let cmd        = list.get(args, 0) in
+  let session_dir = list.get(args, 1) in
+  if cmd == "start" then
+    if n < 3 then io.println("usage: capture_session start <session_dir> <image_path>")
+    else cmd_start(session_dir, list.get(args, 2))
+  else if cmd == "add" then
+    if n < 3 then io.println("usage: capture_session add <session_dir> <image_path>")
+    else cmd_add(session_dir, list.get(args, 2))
+  else if cmd == "show" then
+    cmd_show(session_dir)
+  else if cmd == "verify" then
+    cmd_verify(session_dir)
+  else
+    io.println(str.concat(["unknown command: ", cmd]))
