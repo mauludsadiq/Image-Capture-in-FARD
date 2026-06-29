@@ -1,0 +1,55 @@
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("../src/core/image_read") as imgread
+import("../src/core/perc_id") as perc
+
+let paths = [
+  { label: "ref (original)", path: "out/captures/phase_e3_ref_small.jpg" },
+  { label: "q=95",           path: "out/captures/phase_e3_q95_small.jpg" },
+  { label: "q=75",           path: "out/captures/phase_e3_q75_small.jpg" },
+  { label: "q=50",           path: "out/captures/phase_e3_q50_small.jpg" },
+  { label: "q=25",           path: "out/captures/phase_e3_q25_small.jpg" }
+] in
+
+let _ = io.println("==> Phase E.3: JPEG re-encode stability") in
+let _ = io.println("    Same image, re-encoded at q=95/75/50/25") in
+let _ = io.println("") in
+
+let hashes = list.map(paths, fn(p) {
+  let pixels = imgread.read_image_pixels(p.path, 128) in
+  let dh = perc.dhash16(pixels, 128, 72) in
+  let hs = perc.hist_sketch(pixels) in
+  let _ = io.println(str.concat(["  ", p.label])) in
+  let _ = io.println(str.concat(["    dHash: ", dh, "  hist: ", hs])) in
+  { label: p.label, dhash: dh, hist: hs }
+}) in
+
+let ref_hash = list.get(hashes, 0) in
+let _ = io.println("") in
+let _ = io.println("==> Hamming vs reference:") in
+let _ = list.fold(hashes, 0, fn(i, h) {
+  if i == 0 then i + 1
+  else
+    let ham = perc.hamming(ref_hash.dhash, h.dhash) in
+    let verdict = if ham == 0 then "IDENTICAL"
+                  else if ham <= 5 then "NEAR-DUPLICATE"
+                  else if ham <= 10 then "POSSIBLY RELATED"
+                  else "DIFFERENT" in
+    let _ = io.println(str.concat([
+      "  ref vs ", h.label, ": Hamming=", str.from_int(ham), "  ", verdict
+    ])) in
+    i + 1
+}) in
+
+let _ = io.println("") in
+let _ = io.println("==> Histogram sketches:") in
+let all_same = list.fold(hashes, true, fn(acc, h) {
+  acc && h.hist == ref_hash.hist
+}) in
+let _ = list.fold(hashes, 0, fn(i, h) {
+  let _ = io.println(str.concat(["  ", h.label, ": ", h.hist])) in
+  i + 1
+}) in
+let _ = io.println(str.concat(["  all same: ", if all_same then "YES" else "NO"])) in
+null
