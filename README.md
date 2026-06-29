@@ -128,15 +128,16 @@ See `conformance/if_vectors.json` for the full conformance suite.
 | C | Perceptual identity (dHash + histogram sketch) | Complete |
 | D | Local camera capture bridge (MacBook) | Complete |
 | E | Capture validation experiments (PERC-ID stability) | Complete |
-| F | Live capture protocol (frame chains, video keyframes) | Not started |
+| F | Live capture protocol (frame chains, video keyframes) | Complete |
 
 ## Stats
 
-- 2,944 lines of FARD
+- 3,148 lines of FARD
 - 58 FARD tests, 36 language port tests
 - 94 total tests, 0 failures
 - 5 implementations (FARD + Swift + Kotlin + Go + TypeScript)
 - Live MacBook camera capture bridge working end-to-end
+- Phase F: capture_session.fard -- start/add/show/verify frame chains with PERC-ID and Hamming at each step. First session: 5 frames, all NEAR-DUPLICATE, all VALID.
 - Phase E results:
   - E.1 still x5: hist identical, dHash Hamming max=5 (STABLE)
   - E.2 lighting: hist lighting-invariant, dHash pose-sensitive
