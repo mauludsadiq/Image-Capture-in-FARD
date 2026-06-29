@@ -1,0 +1,91 @@
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("../src/core/image_read") as imgread
+import("../src/core/perc_id") as perc
+
+let baseline = [
+  "out/captures/phase_e2_L1_small.jpg",
+  "out/captures/phase_e2_L2_small.jpg",
+  "out/captures/phase_e2_L3_small.jpg"
+] in
+let changed = [
+  "out/captures/phase_e2_L4_small.jpg",
+  "out/captures/phase_e2_L5_small.jpg",
+  "out/captures/phase_e2_L6_small.jpg"
+] in
+let all_paths = list.concat([baseline, changed]) in
+
+let _ = io.println("==> Phase E.2: Lighting change test") in
+let _ = io.println("    L1-L3: baseline lighting") in
+let _ = io.println("    L4-L6: changed lighting") in
+let _ = io.println("") in
+
+let hashes = list.map(all_paths, fn(path) {
+  let pixels = imgread.read_image_pixels(path, 128) in
+  let dh = perc.dhash16(pixels, 128, 72) in
+  let hs = perc.hist_sketch(pixels) in
+  { path: path, dhash: dh, hist: hs }
+}) in
+
+let labels = ["L1","L2","L3","L4","L5","L6"] in
+let _ = list.fold(hashes, 0, fn(i, h) {
+  let _ = io.println(str.concat([
+    "  ", list.get(labels, i), "  dHash: ", h.dhash, "  hist: ", h.hist
+  ])) in
+  i + 1
+}) in
+
+let _ = io.println("") in
+let _ = io.println("==> Within-baseline Hamming (L1-L3):") in
+let base_hashes = list.build(3, fn(i) { list.get(hashes, i) }) in
+let _ = list.fold(base_hashes, 0, fn(i, a) {
+  let _ = list.fold(base_hashes, 0, fn(j, b) {
+    if j > i then
+      let h = perc.hamming(a.dhash, b.dhash) in
+      let _ = io.println(str.concat([
+        "  L", str.from_int(i+1), " vs L", str.from_int(j+1), ": ", str.from_int(h)
+      ])) in
+      j + 1
+    else j + 1
+  }) in
+  i + 1
+}) in
+
+let _ = io.println("") in
+let _ = io.println("==> Within-changed Hamming (L4-L6):") in
+let chg_hashes = list.build(3, fn(i) { list.get(hashes, i + 3) }) in
+let _ = list.fold(chg_hashes, 0, fn(i, a) {
+  let _ = list.fold(chg_hashes, 0, fn(j, b) {
+    if j > i then
+      let h = perc.hamming(a.dhash, b.dhash) in
+      let _ = io.println(str.concat([
+        "  L", str.from_int(i+4), " vs L", str.from_int(j+4), ": ", str.from_int(h)
+      ])) in
+      j + 1
+    else j + 1
+  }) in
+  i + 1
+}) in
+
+let _ = io.println("") in
+let _ = io.println("==> Cross-lighting Hamming (baseline vs changed):") in
+let _ = list.fold(base_hashes, 0, fn(i, a) {
+  let _ = list.fold(chg_hashes, 0, fn(j, b) {
+    let h = perc.hamming(a.dhash, b.dhash) in
+    let _ = io.println(str.concat([
+      "  L", str.from_int(i+1), " vs L", str.from_int(j+4), ": ", str.from_int(h)
+    ])) in
+    j + 1
+  }) in
+  i + 1
+}) in
+
+let _ = io.println("") in
+let _ = io.println("==> Histogram sketches:") in
+let base_hist = list.get(hashes, 0).hist in
+let chg_hist  = list.get(hashes, 3).hist in
+let _ = io.println(str.concat(["  baseline: ", base_hist])) in
+let _ = io.println(str.concat(["  changed:  ", chg_hist])) in
+let _ = io.println(str.concat(["  same:     ", if base_hist == chg_hist then "YES" else "NO"])) in
+null
