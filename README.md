@@ -1,7 +1,7 @@
 # Image Capture in FARD
 
 Tamper-evident image identity using IF-Protocol-1.0.0 and PERC-1.0.
-Written in FARD with four language ports and a live MacBook capture bridge.
+Written in FARD with six language ports and a live MacBook capture bridge.
 
 ## What this is
 
