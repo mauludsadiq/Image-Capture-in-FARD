@@ -1,0 +1,70 @@
+import("std/io") as io
+import("std/str") as str
+import("std/list") as list
+import("../src/core/image_read") as imgread
+import("../src/core/if_id") as ifid
+import("../src/core/perc_id") as perc
+
+// phase_adversarial.fard -- adversarial tests for IF-ID vs PERC-ID.
+// Tests whether subtle, localized, or global pixel manipulations
+// fool one identity system while the other catches it.
+
+let variants = [
+  { label: "reference",     path: "out/captures/adv_ref_small.jpg" },
+  { label: "subtle_patch",  path: "out/captures/adv_subtle_patch.jpg" },
+  { label: "corner_stamp",  path: "out/captures/adv_corner_stamp.jpg" },
+  { label: "global_noise",  path: "out/captures/adv_global_noise.jpg" }
+] in
+
+let _ = io.println("==> Adversarial test: IF-ID vs PERC-ID") in
+let _ = io.println("    reference vs subtle_patch (10x10 +3 shift, corner)") in
+let _ = io.println("    reference vs corner_stamp (20x20 solid red, corner)") in
+let _ = io.println("    reference vs global_noise (+-2 noise, every pixel)") in
+let _ = io.println("") in
+
+let results = list.map(variants, fn(v) {
+  let pixels = imgread.read_image_pixels(v.path, 128) in
+  let pd = ifid.pixel_digest_canonical(pixels) in
+  let dh = perc.dhash16(pixels, 128, 72) in
+  let hs = perc.hist_sketch(pixels) in
+  let _ = io.println(str.concat(["  ", v.label])) in
+  let _ = io.println(str.concat(["    pixel_digest: ", pd])) in
+  let _ = io.println(str.concat(["    dHash:        ", dh])) in
+  let _ = io.println(str.concat(["    hist:         ", hs])) in
+  { label: v.label, pixel_digest: pd, dhash: dh, hist: hs }
+}) in
+
+let ref = list.get(results, 0) in
+let _ = io.println("") in
+let _ = io.println("==> Results vs reference:") in
+let _ = io.println("") in
+let _ = list.fold(results, 0, fn(i, r) {
+  if i == 0 then i + 1
+  else
+    let if_id_changed = r.pixel_digest != ref.pixel_digest in
+    let ham = perc.hamming(ref.dhash, r.dhash) in
+    let perc_verdict = if ham == 0 then "IDENTICAL"
+                        else if ham <= 5 then "NEAR-DUPLICATE"
+                        else if ham <= 10 then "POSSIBLY RELATED"
+                        else "DIFFERENT" in
+    let hist_changed = r.hist != ref.hist in
+    let _ = io.println(str.concat(["  ", r.label, ":"])) in
+    let _ = io.println(str.concat(["    IF-ID changed:    ", if if_id_changed then "YES" else "NO"])) in
+    let _ = io.println(str.concat(["    PERC Hamming:     ", str.from_int(ham), "  (", perc_verdict, ")"])) in
+    let _ = io.println(str.concat(["    hist changed:     ", if hist_changed then "YES" else "NO"])) in
+    let _ = io.println(str.concat(["    adversarial gap:  ",
+      if if_id_changed && ham <= 5 then "YES -- pixels differ but PERC-ID says near-duplicate (expected, correct behaviour)"
+      else if if_id_changed && ham > 5 then "NO -- both systems agree this is a different image"
+      else "NO -- IF-ID did not change (unexpected for any edit)"])) in
+    let _ = io.println("") in
+    i + 1
+}) in
+
+let _ = io.println("==> Conclusion:") in
+let _ = io.println("    Every adversarial variant should show IF-ID changed = YES") in
+let _ = io.println("    (cryptographic identity never tolerates ANY pixel change).") in
+let _ = io.println("    Small/localized edits should show PERC Hamming <= 5") in
+let _ = io.println("    (perceptual identity correctly calls these near-duplicates,") in
+let _ = io.println("    which is the intended behaviour: PERC-ID detects similarity,") in
+let _ = io.println("    not tampering -- that is what IF-ID is for).") in
+null
