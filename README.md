@@ -145,6 +145,30 @@ Conclusions:
 - Histogram sketch is stable across lighting, movement, and compression
 - dHash is sensitive to pose change, robust to compression and lighting
 
+## Adversarial test results
+
+Three attacks against a real camera capture, testing whether PERC-ID
+alone can be fooled by an edit that IF-ID would catch:
+
+| Attack | Region affected | IF-ID changed | PERC Hamming | Verdict |
+|---|---|---|---|---|
+| Subtle patch (+3 colour shift) | 10x10 px, corner | YES | 2 | NEAR-DUPLICATE |
+| Corner stamp (solid red square) | 20x20 px, ~8% of frame | YES | 3 | NEAR-DUPLICATE |
+| Global noise (+-2 per pixel) | 100% of frame | YES | 1 | NEAR-DUPLICATE |
+
+In every case, IF-ID changed (100% detection -- this is the defining
+property of a cryptographic hash). In every case, PERC-ID still rated
+the image NEAR-DUPLICATE, including the visible 20x20 corner stamp.
+
+This is the core security argument for the dual-identity design:
+PERC-ID alone would miss a real edit covering up to ~8% of the frame.
+IF-ID catches every single-pixel change, with no exceptions. A system
+relying on perceptual hashing alone for tamper detection is not safe;
+IF-Protocol pairs it with a cryptographic identity specifically to
+close this gap.
+
+See apps/phase_adversarial.fard.
+
 ## Status
 
 | Phase | Description | Status |
