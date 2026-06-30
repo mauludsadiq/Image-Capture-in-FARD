@@ -1,7 +1,7 @@
 # Image Capture in FARD
 
 Tamper-evident image identity using IF-Protocol-1.0.0 and PERC-1.0.
-Written in FARD with six language ports and a live MacBook capture bridge.
+Written in FARD with six additional language ports and a live MacBook capture bridge.
 
 ## What this is
 
@@ -125,7 +125,7 @@ Live capture session (tamper-evident frame chain):
 
 ## Conformance
 
-All five implementations agree on the canonical pixel_digest vector
+All seven implementations agree on the canonical pixel_digest vector
 from SPEC-IF-1.0.md Appendix A.1 (4x4 colorful test image):
 
     sha256:2a40854db5a950bbdc8d921620a2ee8074fb8b950102150b6be7b10990e1ddb6
