@@ -63,6 +63,7 @@ Together they answer two different questions:
     cfid_go_if/            -- Go port (Phase B.3), 9 tests
     cfid_ts_if/            -- TypeScript port (Phase B.4), 9 tests
     cfid_python_if/        -- Python port (Phase B.5), 22 tests
+    cfid_rust_if/          -- Rust port (Phase B.6), 21 tests
 
     conformance/
       if_vectors.json      -- canonical pixel_digest + hash12 vectors
@@ -118,6 +119,9 @@ Live capture session (tamper-evident frame chain):
 
     # Python port
     cd cfid_python_if && python3 -m pytest tests/ -v
+
+    # Rust port
+    cd cfid_rust_if && cargo test
 
 ## Conformance
 
@@ -183,5 +187,5 @@ See apps/phase_adversarial.fard.
 ## Stats
 
 - 3,148 lines of FARD
-- 58 FARD tests, 58 language port tests, 116 total, 0 failures
-- 6 implementations (FARD + Swift + Kotlin + Go + TypeScript + Python)
+- 58 FARD tests, 79 language port tests, 137 total, 0 failures
+- 7 implementations (FARD + Swift + Kotlin + Go + TypeScript + Python + Rust)
