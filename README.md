@@ -186,6 +186,6 @@ See apps/phase_adversarial.fard.
 
 ## Stats
 
-- 3,148 lines of FARD
+- 3,218 lines of FARD
 - 58 FARD tests, 79 language port tests, 137 total, 0 failures
 - 7 implementations (FARD + Swift + Kotlin + Go + TypeScript + Python + Rust)
