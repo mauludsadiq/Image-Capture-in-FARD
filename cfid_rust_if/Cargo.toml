@@ -1,0 +1,14 @@
+[package]
+name = "ifreceipt"
+version = "1.0.0"
+edition = "2021"
+description = "IF-Protocol-1.0.0 and PERC-1.0 image identity in Rust"
+license = "MIT"
+repository = "https://github.com/mauludsadiq/Image-Capture-in-FARD"
+
+[dependencies]
+sha2 = "0.10"
+
+[lib]
+name = "ifreceipt"
+path = "src/lib.rs"
